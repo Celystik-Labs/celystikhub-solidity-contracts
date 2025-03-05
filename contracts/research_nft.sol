@@ -63,4 +63,6 @@ contract ResearchNFT is ERC721URIStorage, Ownable {
     function submitReview(uint256 tokenId, string memory review) public {
         emit ReviewSubmitted(tokenId, review);
     }
+
+   
 }
