@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import "./interfaces/IEmissionController.sol";
 import "./interfaces/ICELToken.sol";
+import "./interfaces/IInnovationUnits.sol";
+import "./interfaces/IStaking.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
@@ -29,6 +31,12 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // CEL Token contract
     ICELToken public celToken;
+
+    // Innovation Units contract
+    IInnovationUnits public innovationUnits;
+
+    // Staking contract
+    IStaking public staking;
 
     // Emission parameters
     uint256 public emissionStartTime;
@@ -112,6 +120,32 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         emissionStartTime = block.timestamp;
         lastUpdateTime = block.timestamp;
         currentPeriod = 0;
+    }
+
+    /**
+     * @dev Sets the address of the InnovationUnits contract
+     * @param _innovationUnitsAddress Address of the InnovationUnits contract
+     */
+    function setInnovationUnitsAddress(
+        address _innovationUnitsAddress
+    ) external onlyOwner {
+        require(
+            _innovationUnitsAddress != address(0),
+            "EmissionController: invalid address"
+        );
+        innovationUnits = IInnovationUnits(_innovationUnitsAddress);
+    }
+
+    /**
+     * @dev Sets the address of the Staking contract
+     * @param _stakingAddress Address of the Staking contract
+     */
+    function setStakingAddress(address _stakingAddress) external onlyOwner {
+        require(
+            _stakingAddress != address(0),
+            "EmissionController: invalid address"
+        );
+        staking = IStaking(_stakingAddress);
     }
 
     /**

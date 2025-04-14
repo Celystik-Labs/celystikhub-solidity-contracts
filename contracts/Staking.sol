@@ -162,7 +162,8 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
     ) external override onlyOwner returns (bool) {
         require(projectId > 0, "Staking: project ID must be greater than zero");
         require(
-            projectPools[projectId].totalStaked == 0,
+            projectPools[projectId].enabled == false &&
+                projectPools[projectId].totalStaked == 0,
             "Staking: staking pool already exists"
         );
 
