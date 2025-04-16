@@ -4,6 +4,8 @@
 // When running the script with `npx hardhat run <script>` you'll find the Hardhat
 // Runtime Environment's members available in the global scope.
 const hre = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
@@ -18,6 +20,10 @@ async function main() {
   // Get the deployer's account
   const [deployer] = await hre.ethers.getSigners();
   console.log("Deploying with account:", deployer.address);
+  
+  // Get the network
+  const networkName = hre.network.name;
+  console.log(`Deploying to network: ${networkName}`);
 
   // Deploy CEL Token
   const CELToken = await hre.ethers.getContractFactory("CELToken");
@@ -29,16 +35,6 @@ async function main() {
   );
   await celToken.deployed();
   console.log("CELToken deployed to:", celToken.address);
-
-  // Deploy EmissionController
-  const EmissionController = await hre.ethers.getContractFactory("EmissionController");
-  const emissionController = await EmissionController.deploy(
-    celToken.address,                      // CEL token address
-    hre.ethers.utils.parseEther("100000"), // Initial emission cap per period: 100k tokens
-    hre.ethers.utils.parseEther("0.05")    // Emission decay rate: 5%
-  );
-  await emissionController.deployed();
-  console.log("EmissionController deployed to:", emissionController.address);
 
   // Deploy InnovationUnits
   const InnovationUnits = await hre.ethers.getContractFactory("InnovationUnits");
@@ -56,6 +52,22 @@ async function main() {
   await staking.deployed();
   console.log("Staking deployed to:", staking.address);
 
+  // Deploy EmissionController
+  const EmissionController = await hre.ethers.getContractFactory("EmissionController");
+  const emissionController = await EmissionController.deploy(
+    celToken.address,                      // CEL token address
+    hre.ethers.utils.parseEther("100000"), // Initial emission cap per period: 100k tokens
+    hre.ethers.utils.parseEther("0.05")    // Emission decay rate: 5%
+  );
+  await emissionController.deployed();
+  console.log("EmissionController deployed to:", emissionController.address);
+
+  // Setup contracts in EmissionController
+  console.log("Setting up contract references in EmissionController...");
+  await emissionController.setInnovationUnitsAddress(innovationUnits.address);
+  await emissionController.setStakingAddress(staking.address);
+  console.log("Contract references set up successfully");
+
   // Set up permissions
   console.log("Setting up permissions...");
   
@@ -71,22 +83,50 @@ async function main() {
   await staking.transferOwnership(emissionController.address);
   console.log("Transferred ownership of Staking to EmissionController");
 
+  // Transfer some tokens to deployer for testing purposes
+  if (networkName !== "mainnet") {
+    const testAmount = hre.ethers.utils.parseEther("1000000"); // 1 million tokens
+    console.log(`Transferring ${hre.ethers.utils.formatEther(testAmount)} CEL tokens to deployer for testing...`);
+    // Deployer already has tokens as the deployer of the contract
+  }
+
   console.log("Deployment completed successfully!");
   
-  // Return the deployed contract addresses
-  return {
+  // Create deployment info
+  const deploymentInfo = {
+    network: networkName,
+    deployer: deployer.address,
     celToken: celToken.address,
     emissionController: emissionController.address,
     innovationUnits: innovationUnits.address,
-    staking: staking.address
+    staking: staking.address,
+    timestamp: new Date().toISOString(),
+    blockNumber: await hre.ethers.provider.getBlockNumber()
   };
+
+  // Create deployments directory if it doesn't exist
+  const deploymentsDir = path.join(__dirname, "../deployments");
+  if (!fs.existsSync(deploymentsDir)) {
+    fs.mkdirSync(deploymentsDir);
+  }
+
+  // Save deployment info to a file
+  const deploymentFile = path.join(deploymentsDir, `${networkName}-deployment.json`);
+  fs.writeFileSync(
+    deploymentFile,
+    JSON.stringify(deploymentInfo, null, 2)
+  );
+  console.log(`Deployment information saved to ${deploymentFile}`);
+  
+  // Return the deployed contract addresses
+  return deploymentInfo;
 }
 
 // We recommend this pattern to be able to use async/await everywhere
 // and properly handle errors.
 main()
   .then((deployedContracts) => {
-    console.log("Deployed contract addresses:", deployedContracts);
+    console.log("Deployment summary:", deployedContracts);
     process.exit(0);
   })
   .catch((error) => {

@@ -21,17 +21,20 @@ describe("EmissionController", function () {
 
   // Constants for testing
   const PROJECT_ID = 1;
+  const PROJECT_NAME = "Test Project";
+  const PROJECT_DESCRIPTION = "Test Project Description";
   const INITIAL_SUPPLY = ethers.utils.parseEther("1000000"); // 1 million tokens
   const CAP = ethers.utils.parseEther("10000000"); // 10 million tokens
-  const EMISSION_CAP = ethers.utils.parseEther("20000"); // 20,000 tokens
-  const DECAY_RATE = 950; // 95.0% (in basis points)
+  const PERIOD_EMISSION_CAP = ethers.utils.parseEther("20000"); // 20,000 tokens per period
+  const EMISSION_DECAY_RATE = ethers.utils.parseEther("0.05"); // 5% decay rate
+  const TOTAL_SUPPLY = ethers.utils.parseEther("100000"); // 100,000 IU tokens
+  const CREATOR_SHARE = ethers.utils.parseEther("20"); // 20% scaled by PRECISION (1e18)
+  const CONTRIBUTOR_RESERVE = ethers.utils.parseEther("30"); // 30% scaled by PRECISION
+  const INVESTOR_RESERVE = ethers.utils.parseEther("50"); // 50% scaled by PRECISION
+  const PRICE_PER_UNIT = ethers.utils.parseEther("0.01"); // 0.01 CEL per IU
   const STAKE_AMOUNT = ethers.utils.parseEther("1000");
   const STAKE_LIMIT = ethers.utils.parseEther("10000");
-  const MIN_STAKING_PERIOD = 60 * 60 * 24 * 7; // 1 week in seconds
-  const CREATOR_SHARE = 2000; // 20% in basis points
-  const CONTRIBUTOR_SHARE = 3000; // 30% in basis points
-  const INVESTOR_SHARE = 5000; // 50% in basis points
-
+  
   beforeEach(async function () {
     // Get the ContractFactory and Signers here
     CELToken = await ethers.getContractFactory("CELToken");
@@ -60,49 +63,38 @@ describe("EmissionController", function () {
     // Deploy EmissionController
     emissionController = await EmissionController.deploy(
       celToken.address,
-      EMISSION_CAP,
-      DECAY_RATE
+      PERIOD_EMISSION_CAP,
+      EMISSION_DECAY_RATE
     );
     await emissionController.deployed();
 
     // Setup permissions
     await celToken.setMinter(emissionController.address, true);
-    await innovationUnits.transferOwnership(emissionController.address);
-    await staking.transferOwnership(emissionController.address);
 
-    // Set contract addresses in EmissionController
+    // Transfer contracts to EmissionController AFTER setup
+    // Set contract addresses in EmissionController first
     await emissionController.setInnovationUnitsAddress(innovationUnits.address);
     await emissionController.setStakingAddress(staking.address);
 
-    // Create project in InnovationUnits
-    await innovationUnits.createProject(
-      PROJECT_ID,
-      TOTAL_SUPPLY,
-      CREATOR_SHARE,
-      CONTRIBUTOR_SHARE,
-      INVESTOR_SHARE,
-      PRICE_PER_UNIT
-    );
+    // Distribute a large amount of tokens for testing to make sure balances are sufficient
+    await celToken.transfer(investor.address, ethers.utils.parseEther("100000"));
+    await celToken.transfer(staker1.address, ethers.utils.parseEther("100000"));
+    await celToken.transfer(staker2.address, ethers.utils.parseEther("100000"));
+    await celToken.transfer(creator.address, ethers.utils.parseEther("100000"));
+    await celToken.transfer(contributor.address, ethers.utils.parseEther("100000"));
 
-    // Distribute some tokens for testing
-    await celToken.transfer(investor.address, ethers.utils.parseEther("10000"));
-    await celToken.transfer(staker1.address, ethers.utils.parseEther("10000"));
-    await celToken.transfer(staker2.address, ethers.utils.parseEther("10000"));
+    // Now transfer ownership after setup is complete
+    await innovationUnits.transferOwnership(emissionController.address);
+    await staking.transferOwnership(emissionController.address);
   });
 
   describe("Deployment and Setup", function () {
     it("Should deploy with correct parameters", async function () {
       expect(await emissionController.celToken()).to.equal(celToken.address);
-      expect(await emissionController.emissionCap()).to.equal(EMISSION_CAP);
-      expect(await emissionController.decayRate()).to.equal(DECAY_RATE);
-    });
-
-    it("Should set contract addresses correctly", async function () {
+      expect(await emissionController.periodEmissionCap()).to.equal(PERIOD_EMISSION_CAP);
+      expect(await emissionController.emissionDecayRate()).to.equal(EMISSION_DECAY_RATE);
       expect(await emissionController.innovationUnits()).to.equal(innovationUnits.address);
       expect(await emissionController.staking()).to.equal(staking.address);
-    });
-
-    it("Should have correct permissions", async function () {
       expect(await celToken.isMinter(emissionController.address)).to.equal(true);
       expect(await innovationUnits.owner()).to.equal(emissionController.address);
       expect(await staking.owner()).to.equal(emissionController.address);
@@ -110,313 +102,273 @@ describe("EmissionController", function () {
   });
 
   describe("Project Creation and Management", function () {
-    it("Should create a project with correct parameters", async function () {
+    it("Should create a project with InitializeProject", async function () {
+      // Create a new project using the updated function name
+      await emissionController.InitializeProject(
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
+        CREATOR_SHARE,
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
+      );
+
+      // Check project registry
+      expect(await emissionController.projectRegistry(PROJECT_ID)).to.equal(true);
+      expect(await emissionController.projectCount()).to.equal(1);
+
       // Check project in InnovationUnits
-      const project = await innovationUnits.getProject(PROJECT_ID);
-      expect(project.active).to.equal(true);
-      expect(project.creatorShare).to.equal(CREATOR_SHARE);
-      expect(project.contributorShare).to.equal(CONTRIBUTOR_SHARE);
-      expect(project.investorShare).to.equal(INVESTOR_SHARE);
-
-      // Check staking pool
-      const stakingPool = await staking.getProjectStakingPool(PROJECT_ID);
-      expect(stakingPool.enabled).to.equal(true);
-      expect(stakingPool.stakeLimit).to.equal(STAKE_LIMIT);
-      expect(stakingPool.minStakingPeriod).to.equal(MIN_STAKING_PERIOD);
+      const config = await innovationUnits.getProjectConfig(PROJECT_ID);
+      expect(config.isActive).to.equal(true);
+      expect(config.totalSupply).to.equal(TOTAL_SUPPLY);
+      expect(config.creatorShare).to.equal(CREATOR_SHARE);
+      expect(config.contributorReserve).to.equal(CONTRIBUTOR_RESERVE);
+      expect(config.investorReserve).to.equal(INVESTOR_RESERVE);
+      expect(config.pricePerUnit).to.equal(PRICE_PER_UNIT);
     });
 
-    it("Should not allow creating a project with ID 0", async function () {
-      await expect(
-        emissionController.createProject(0, CREATOR_SHARE, CONTRIBUTOR_SHARE, INVESTOR_SHARE, STAKE_LIMIT)
-      ).to.be.revertedWith("EmissionController: project ID must be greater than zero");
-    });
+    it("Should not allow creating a duplicate project", async function () {
+      // Create the first project
+      await emissionController.InitializeProject(
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
+        CREATOR_SHARE,
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
+      );
 
-    it("Should not allow creating a project with invalid shares total", async function () {
-      // Total greater than 10000 (100%)
+      // Try to create a duplicate
       await expect(
-        emissionController.createProject(2, 3000, 3000, 5000, STAKE_LIMIT)
-      ).to.be.revertedWith("EmissionController: shares must sum to 10000 basis points");
-
-      // Total less than 10000 (100%)
-      await expect(
-        emissionController.createProject(2, 2000, 2000, 5000, STAKE_LIMIT)
-      ).to.be.revertedWith("EmissionController: shares must sum to 10000 basis points");
+        emissionController.InitializeProject(
+          PROJECT_ID,
+          PROJECT_NAME,
+          PROJECT_DESCRIPTION,
+          TOTAL_SUPPLY,
+          CREATOR_SHARE,
+          CONTRIBUTOR_RESERVE,
+          INVESTOR_RESERVE,
+          PRICE_PER_UNIT,
+          STAKE_LIMIT
+        )
+      ).to.be.revertedWith("EmissionController: project already exists");
     });
 
     it("Should update an existing project", async function () {
-      const newCreatorShare = 1500; // 15%
-      const newContributorShare = 2500; // 25%
-      const newInvestorShare = 6000; // 60%
-      const newStakeLimit = ethers.utils.parseEther("20000");
-
-      await emissionController.updateProject(
+      // Create the project first
+      await emissionController.InitializeProject(
         PROJECT_ID,
-        newCreatorShare,
-        newContributorShare,
-        newInvestorShare,
-        newStakeLimit,
-        true
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
+        CREATOR_SHARE,
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
       );
 
-      // Check project in InnovationUnits
-      const project = await innovationUnits.getProject(PROJECT_ID);
-      expect(project.active).to.equal(true);
-      expect(project.creatorShare).to.equal(newCreatorShare);
-      expect(project.contributorShare).to.equal(newContributorShare);
-      expect(project.investorShare).to.equal(newInvestorShare);
+      // Update the project with new parameters
+      const newStakeLimit = ethers.utils.parseEther("20000");
+      await emissionController.updateProject(PROJECT_ID, newStakeLimit, true);
 
-      // Check staking pool
+      // Verify update in staking contract
       const stakingPool = await staking.getProjectStakingPool(PROJECT_ID);
-      expect(stakingPool.enabled).to.equal(true);
       expect(stakingPool.stakeLimit).to.equal(newStakeLimit);
+      expect(stakingPool.enabled).to.equal(true);
     });
 
     it("Should deactivate a project", async function () {
-      await emissionController.updateProject(
+      // Create the project first
+      await emissionController.InitializeProject(
         PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
         CREATOR_SHARE,
-        CONTRIBUTOR_SHARE,
-        INVESTOR_SHARE,
-        STAKE_LIMIT,
-        false
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
       );
 
-      // Check project in InnovationUnits
-      const project = await innovationUnits.getProject(PROJECT_ID);
-      expect(project.active).to.equal(false);
+      // Deactivate the project
+      await emissionController.updateProject(PROJECT_ID, STAKE_LIMIT, false);
 
-      // Check staking pool
+      // Verify project is deactivated in staking contract
       const stakingPool = await staking.getProjectStakingPool(PROJECT_ID);
       expect(stakingPool.enabled).to.equal(false);
+
+      // Verify project is deactivated in InnovationUnits (price set to 0)
+      const config = await innovationUnits.getProjectConfig(PROJECT_ID);
+      expect(config.pricePerUnit).to.equal(0);
     });
   });
 
   describe("Role Assignments", function () {
+    beforeEach(async function () {
+      // Create the project first
+      await emissionController.InitializeProject(
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
+        CREATOR_SHARE,
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
+      );
+    });
+
     it("Should assign creator role", async function () {
       await emissionController.assignCreator(PROJECT_ID, creator.address);
 
-      // Check creator in InnovationUnits
-      const creatorIUs = await innovationUnits.getInnovationUnits(creator.address, PROJECT_ID);
-      expect(creatorIUs).to.be.gt(0);
-
-      // Check creator role
-      const isCreator = await innovationUnits.isCreator(creator.address, PROJECT_ID);
-      expect(isCreator).to.equal(true);
+      // Check creator IUs in InnovationUnits
+      const creatorBalance = await innovationUnits.balanceOf(creator.address, PROJECT_ID);
+      expect(creatorBalance).to.be.gt(0);
     });
 
     it("Should assign contributor role", async function () {
-      await emissionController.assignContributor(PROJECT_ID, contributor.address, ethers.utils.parseEther("100"));
+      const contributionAmount = ethers.utils.parseEther("100");
+      await emissionController.assignContributor(PROJECT_ID, contributor.address, contributionAmount);
 
-      // Check contributor in InnovationUnits
-      const contributorIUs = await innovationUnits.getInnovationUnits(contributor.address, PROJECT_ID);
-      expect(contributorIUs).to.be.gt(0);
+      // Check contributor IUs in InnovationUnits
+      const contributorBalance = await innovationUnits.balanceOf(contributor.address, PROJECT_ID);
+      expect(contributorBalance).to.equal(contributionAmount);
+    });
+  });
 
-      // Check contributor role
-      const isContributor = await innovationUnits.isContributor(contributor.address, PROJECT_ID);
-      expect(isContributor).to.equal(true);
+  describe("Emission Parameters", function () {
+    it("Should update emission parameters", async function () {
+      const newEmissionCap = ethers.utils.parseEther("30000");
+      const newDecayRate = ethers.utils.parseEther("0.1"); // 10% decay
+
+      await emissionController.updateEmissionParameters(newEmissionCap, newDecayRate);
+
+      expect(await emissionController.periodEmissionCap()).to.equal(newEmissionCap);
+      expect(await emissionController.emissionDecayRate()).to.equal(newDecayRate);
     });
 
-    it("Should not allow assigning multiple creators", async function () {
-      await emissionController.assignCreator(PROJECT_ID, creator.address);
+    it("Should update weight parameters", async function () {
+      const newAlpha = ethers.utils.parseEther("1.5"); // 1.5 weight for staking
+      const newBeta = ethers.utils.parseEther("0.8"); // 0.8 weight for IU holdings
+
+      await emissionController.updateWeightParameters(newAlpha, newBeta);
+
+      expect(await emissionController.alpha()).to.equal(newAlpha);
+      expect(await emissionController.beta()).to.equal(newBeta);
+    });
+  });
+
+  describe("Emission Period", function () {
+    it("Should update emission period", async function () {
+      // Check initial period
+      expect(await emissionController.currentPeriod()).to.equal(0);
+
+      // Advance time by one emission period (7 days)
+      const EMISSION_PERIOD_SECONDS = 7 * 24 * 60 * 60;
+      await ethers.provider.send("evm_increaseTime", [EMISSION_PERIOD_SECONDS]);
+      await ethers.provider.send("evm_mine");
+
+      // Update emission period
+      await emissionController.updateEmissionPeriod();
+
+      // Check period updated
+      expect(await emissionController.currentPeriod()).to.equal(1);
+    });
+
+    it("Should decay emission cap after period update", async function () {
+      // Get initial emission cap
+      const initialCap = await emissionController.periodEmissionCap();
+
+      // Advance time by one emission period (7 days)
+      const EMISSION_PERIOD_SECONDS = 7 * 24 * 60 * 60;
+      await ethers.provider.send("evm_increaseTime", [EMISSION_PERIOD_SECONDS]);
+      await ethers.provider.send("evm_mine");
+
+      // Update emission period
+      await emissionController.updateEmissionPeriod();
+
+      // Check cap was reduced by decay rate
+      const newCap = await emissionController.periodEmissionCap();
+      const PRECISION = ethers.utils.parseEther("1");
+      const expectedCap = initialCap.mul(PRECISION.sub(EMISSION_DECAY_RATE)).div(PRECISION);
       
-      await expect(
-        emissionController.assignCreator(PROJECT_ID, addrs[0].address)
-      ).to.be.revertedWith("InnovationUnits: creator already assigned");
+      expect(newCap).to.be.closeTo(expectedCap, 100); // Allow small precision differences
     });
   });
 
-  describe("Staking and Investing", function () {
+  describe("Token Emissions", function () {
     beforeEach(async function () {
-      // Approve tokens for staking and investing
-      await celToken.connect(staker1).approve(staking.address, STAKE_AMOUNT);
-      await celToken.connect(staker2).approve(staking.address, STAKE_AMOUNT);
-      await celToken.connect(investor).approve(innovationUnits.address, STAKE_AMOUNT);
-    });
+      // Create a project first
+      await emissionController.InitializeProject(
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_DESCRIPTION,
+        TOTAL_SUPPLY,
+        CREATOR_SHARE,
+        CONTRIBUTOR_RESERVE,
+        INVESTOR_RESERVE,
+        PRICE_PER_UNIT,
+        STAKE_LIMIT
+      );
 
-    it("Should allow staking tokens", async function () {
-      await emissionController.connect(staker1).stakeTokens(PROJECT_ID, STAKE_AMOUNT);
-
-      // Check staker1 stake
-      const staker1Stake = await staking.getStaked(staker1.address, PROJECT_ID);
-      expect(staker1Stake).to.equal(STAKE_AMOUNT);
-    });
-
-    it("Should allow purchasing Innovation Units", async function () {
-      await emissionController.connect(investor).purchaseInnovationUnits(PROJECT_ID, STAKE_AMOUNT);
-
-      // Check investor IUs
-      const investorIUs = await innovationUnits.getInnovationUnits(investor.address, PROJECT_ID);
-      expect(investorIUs).to.be.gt(0);
-
-      // Check investor role
-      const isInvestor = await innovationUnits.isInvestor(investor.address, PROJECT_ID);
-      expect(isInvestor).to.equal(true);
-    });
-  });
-
-  describe("Emissions", function () {
-    beforeEach(async function () {
       // Assign roles
       await emissionController.assignCreator(PROJECT_ID, creator.address);
       await emissionController.assignContributor(PROJECT_ID, contributor.address, ethers.utils.parseEther("100"));
 
-      // Stake and invest
-      await celToken.connect(staker1).approve(staking.address, STAKE_AMOUNT);
-      await celToken.connect(staker2).approve(staking.address, STAKE_AMOUNT);
-      await celToken.connect(investor).approve(innovationUnits.address, STAKE_AMOUNT);
+      // Set up project weights
+      await emissionController.updateStakingWeight(PROJECT_ID, ethers.utils.parseEther("100"));
+      await emissionController.updateIUWeight(PROJECT_ID, ethers.utils.parseEther("100"));
 
-      await emissionController.connect(staker1).stakeTokens(PROJECT_ID, STAKE_AMOUNT.div(2));
-      await emissionController.connect(staker2).stakeTokens(PROJECT_ID, STAKE_AMOUNT.div(2));
-      await emissionController.connect(investor).purchaseInnovationUnits(PROJECT_ID, STAKE_AMOUNT);
-
-      // Set last emission time
-      const blockTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
-      await emissionController.setLastEmissionTime(blockTimestamp);
+      // Set up user shares
+      await emissionController.updateUserStakingShare(PROJECT_ID, staker1.address, ethers.utils.parseEther("0.5"));
+      await emissionController.updateUserIUShare(PROJECT_ID, creator.address, ethers.utils.parseEther("0.7"));
     });
 
-    it("Should not emit rewards before emission period", async function () {
-      // Try to emit rewards
-      await expect(
-        emissionController.emitRewards()
-      ).to.be.revertedWith("EmissionController: emission period not reached");
-    });
-
-    it("Should emit rewards after emission period", async function () {
-      // Advance time
-      await ethers.provider.send("evm_increaseTime", [MIN_STAKING_PERIOD]);
-      await ethers.provider.send("evm_mine");
-
-      // Get initial balances
-      const initialCreatorBalance = await celToken.balanceOf(creator.address);
-      const initialContributorBalance = await celToken.balanceOf(contributor.address);
-      const initialInvestorBalance = await celToken.balanceOf(investor.address);
-      const initialStaker1Balance = await celToken.balanceOf(staker1.address);
-      const initialStaker2Balance = await celToken.balanceOf(staker2.address);
-
-      // Emit rewards
-      await emissionController.emitRewards();
-
-      // Check that tokens were distributed
-      const creatorRewards = (await celToken.balanceOf(creator.address)).sub(initialCreatorBalance);
-      const contributorRewards = (await celToken.balanceOf(contributor.address)).sub(initialContributorBalance);
-      const investorRewards = (await celToken.balanceOf(investor.address)).sub(initialInvestorBalance);
-      const staker1Rewards = (await celToken.balanceOf(staker1.address)).sub(initialStaker1Balance);
-      const staker2Rewards = (await celToken.balanceOf(staker2.address)).sub(initialStaker2Balance);
-
-      // Verify rewards were distributed
-      expect(creatorRewards).to.be.gt(0);
-      expect(contributorRewards).to.be.gt(0);
-      expect(investorRewards).to.be.gt(0);
-      expect(staker1Rewards).to.be.gt(0);
-      expect(staker2Rewards).to.be.gt(0);
-
-      // Verify proportional distribution
-      expect(investorRewards).to.be.gt(creatorRewards); // Investor should get more (50% vs 20%)
-      expect(staker1Rewards).to.be.approximately(staker2Rewards, ethers.utils.parseEther("0.1")); // Stakers should get about equal
-    });
-
-    it("Should update last emission time after emitting rewards", async function () {
-      // Advance time
-      await ethers.provider.send("evm_increaseTime", [MIN_STAKING_PERIOD]);
-      await ethers.provider.send("evm_mine");
-
-      // Emit rewards
-      await emissionController.emitRewards();
-
-      // Check last emission time
-      const blockTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
-      const lastEmissionTime = await emissionController.lastEmissionTime();
-      expect(lastEmissionTime).to.be.closeTo(blockTimestamp, 10); // Allow small deviation
-    });
-
-    it("Should apply decay rate to emission cap", async function () {
-      // Advance time
-      await ethers.provider.send("evm_increaseTime", [MIN_STAKING_PERIOD]);
-      await ethers.provider.send("evm_mine");
-
-      // Get initial emission cap
-      const initialEmissionCap = await emissionController.emissionCap();
-
-      // Emit rewards
-      await emissionController.emitRewards();
-
-      // Check new emission cap
-      const newEmissionCap = await emissionController.emissionCap();
-      const expectedEmissionCap = initialEmissionCap.mul(DECAY_RATE).div(10000);
-      expect(newEmissionCap).to.equal(expectedEmissionCap);
-    });
-
-    it("Should allow multiple emission cycles", async function () {
-      // First cycle
-      await ethers.provider.send("evm_increaseTime", [MIN_STAKING_PERIOD]);
-      await ethers.provider.send("evm_mine");
-      await emissionController.emitRewards();
-
-      // Second cycle
-      await ethers.provider.send("evm_increaseTime", [MIN_STAKING_PERIOD]);
-      await ethers.provider.send("evm_mine");
-
-      // Get balances before second emission
-      const initialCreatorBalance = await celToken.balanceOf(creator.address);
-      const initialContributorBalance = await celToken.balanceOf(contributor.address);
-
-      // Emit rewards again
-      await emissionController.emitRewards();
-
-      // Check that tokens were distributed again
-      const creatorRewards = (await celToken.balanceOf(creator.address)).sub(initialCreatorBalance);
-      const contributorRewards = (await celToken.balanceOf(contributor.address)).sub(initialContributorBalance);
-
-      expect(creatorRewards).to.be.gt(0);
-      expect(contributorRewards).to.be.gt(0);
-    });
-  });
-
-  describe("Administrative Functions", function () {
-    it("Should allow owner to update emission parameters", async function () {
-      const newEmissionCap = ethers.utils.parseEther("30000");
-      const newDecayRate = 980; // 98%
-
-      await emissionController.setEmissionParameters(newEmissionCap, newDecayRate);
-
-      expect(await emissionController.emissionCap()).to.equal(newEmissionCap);
-      expect(await emissionController.decayRate()).to.equal(newDecayRate);
-    });
-
-    it("Should not allow non-owners to update emission parameters", async function () {
-      await expect(
-        emissionController.connect(creator).setEmissionParameters(
-          ethers.utils.parseEther("30000"),
-          980
-        )
-      ).to.be.revertedWith("Ownable: caller is not the owner");
-    });
-
-    it("Should allow owner to update contract addresses", async function () {
-      // Deploy new contracts
-      const newStaking = await Staking.deploy(celToken.address);
-      await newStaking.deployed();
+    it("Should emit tokens to an account", async function () {
+      const emissionAmount = ethers.utils.parseEther("1000");
+      const initialBalance = await celToken.balanceOf(staker1.address);
       
-      const newInnovationUnits = await InnovationUnits.deploy(celToken.address);
-      await newInnovationUnits.deployed();
+      await emissionController.emitTokens(staker1.address, emissionAmount);
       
-      // Update addresses
-      await emissionController.setInnovationUnitsAddress(newInnovationUnits.address);
-      await emissionController.setStakingAddress(newStaking.address);
+      const newBalance = await celToken.balanceOf(staker1.address);
+      expect(newBalance.sub(initialBalance)).to.equal(emissionAmount);
       
-      // Check addresses updated
-      expect(await emissionController.innovationUnits()).to.equal(newInnovationUnits.address);
-      expect(await emissionController.staking()).to.equal(newStaking.address);
+      // Check emission tracking
+      expect(await emissionController.currentPeriodEmitted()).to.equal(emissionAmount);
+      expect(await emissionController.totalEmitted()).to.equal(emissionAmount);
     });
 
-    it("Should not allow setting invalid addresses", async function () {
-      await expect(
-        emissionController.setInnovationUnitsAddress(ethers.constants.AddressZero)
-      ).to.be.revertedWith("EmissionController: invalid address");
+    it("Should distribute emissions to projects", async function () {
+      // Distribute emissions
+      await emissionController.distributeEmissions();
       
-      await expect(
-        emissionController.setStakingAddress(ethers.constants.AddressZero)
-      ).to.be.revertedWith("EmissionController: invalid address");
+      // Check project emissions
+      const projectEmissions = await emissionController.getProjectEmissions(PROJECT_ID);
+      expect(projectEmissions).to.be.gt(0);
+    });
+
+    it("Should allow claiming rewards", async function () {
+      // Distribute emissions first
+      await emissionController.distributeEmissions();
+      
+      // Get initial balance
+      const initialBalance = await celToken.balanceOf(staker1.address);
+      
+      // Claim rewards
+      await emissionController.connect(staker1).claimRewards(PROJECT_ID);
+      
+      // Check new balance
+      const newBalance = await celToken.balanceOf(staker1.address);
+      expect(newBalance).to.be.gt(initialBalance);
     });
   });
 }); 

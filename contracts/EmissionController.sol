@@ -47,6 +47,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     uint256 public emissionDecayRate; // Rate at which emissions decrease (percentage, scaled by PRECISION)
     uint256 public lastUpdateTime;
 
+    // Project management
+    mapping(uint256 => bool) public projectRegistry; // projectId => exists
+    uint256 public projectCount;
+
     // Project data structures
     struct ProjectData {
         uint256 poiScore; // PoI score for the project
@@ -92,6 +96,24 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     event EmissionParametersUpdated(
         uint256 periodEmissionCap,
         uint256 decayRate
+    );
+
+    // Project management events
+    event ProjectUpdated(
+        uint256 indexed projectId,
+        uint256 stakeLimit,
+        bool active
+    );
+    event CreatorAssigned(uint256 indexed projectId, address indexed creator);
+    event ContributorAssigned(
+        uint256 indexed projectId,
+        address indexed contributor,
+        uint256 amount
+    );
+    event ProjectCreated(
+        uint256 indexed projectId,
+        string name,
+        string description
     );
 
     /**
@@ -171,15 +193,15 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         emit StakingWeightUpdated(projectId, weight);
 
         // Add project to active projects if not already there
-        bool projectExists = false;
+        bool isProjectExisting = false;
         for (uint256 i = 0; i < activeProjects.length; i++) {
             if (activeProjects[i] == projectId) {
-                projectExists = true;
+                isProjectExisting = true;
                 break;
             }
         }
 
-        if (!projectExists && weight > 0) {
+        if (!isProjectExisting && weight > 0) {
             activeProjects.push(projectId);
         }
     }
@@ -197,15 +219,15 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         emit IUWeightUpdated(projectId, weight);
 
         // Add project to active projects if not already there
-        bool projectExists = false;
+        bool isProjectExisting = false;
         for (uint256 i = 0; i < activeProjects.length; i++) {
             if (activeProjects[i] == projectId) {
-                projectExists = true;
+                isProjectExisting = true;
                 break;
             }
         }
 
-        if (!projectExists && weight > 0) {
+        if (!isProjectExisting && weight > 0) {
             activeProjects.push(projectId);
         }
     }
@@ -490,5 +512,220 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      */
     function getCELToken() external view override returns (address) {
         return address(celToken);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////
+    //////////////////////////PROJECT CREATION AND MANAGEMENT//////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////////
+
+    /**
+     * @dev Creates a new project
+     * @param projectId ID of the project
+     * @param name Name of the project
+     * @param description Description of the project
+     * @param totalSupply Total supply of IUs for the project
+     * @param creatorShare Percentage of IUs allocated to creator (scaled by PRECISION)
+     * @param contributorReserve Percentage of IUs reserved for contributors (scaled by PRECISION)
+     * @param investorReserve Percentage of IUs reserved for investors (scaled by PRECISION)
+     * @param pricePerUnit Price per IU in CEL tokens
+     * @param stakeLimit Maximum stake limit for the project (0 = no limit)
+     * @return bool indicating if the creation was successful
+     */
+    function InitializeProject(
+        uint256 projectId,
+        string memory name,
+        string memory description,
+        uint256 totalSupply,
+        uint256 creatorShare,
+        uint256 contributorReserve,
+        uint256 investorReserve,
+        uint256 pricePerUnit,
+        uint256 stakeLimit
+    ) external onlyOwner returns (bool) {
+        require(
+            !projectRegistry[projectId],
+            "EmissionController: project already exists"
+        );
+
+        // Create project IUs
+        bool iuCreated = innovationUnits.createProject(
+            projectId,
+            totalSupply,
+            creatorShare,
+            contributorReserve,
+            investorReserve,
+            pricePerUnit
+        );
+        require(iuCreated, "EmissionController: failed to create IUs");
+
+        // Create staking pool with minimum staking period
+        uint256 minStakingPeriod = 7 days; // Default minimum staking period
+        bool stakingCreated = staking.createStakingPool(
+            projectId,
+            stakeLimit,
+            minStakingPeriod
+        );
+        require(
+            stakingCreated,
+            "EmissionController: failed to create staking pool"
+        );
+
+        // Register project
+        projectRegistry[projectId] = true;
+        projectCount++;
+
+        emit ProjectCreated(projectId, name, description);
+
+        return true;
+    }
+
+    /**
+     * @dev Updates an existing project (currently only staking parameters can be updated)
+     * @param projectId ID of the project
+     * @param stakeLimit Maximum stake limit for the project (0 = no limit)
+     * @param active Whether the project should be active
+     * @return bool indicating if the update was successful
+     */
+    function updateProject(
+        uint256 projectId,
+        uint256 stakeLimit,
+        bool active
+    ) external onlyOwner returns (bool) {
+        require(
+            projectRegistry[projectId],
+            "EmissionController: project does not exist"
+        );
+
+        // Update staking pool parameters
+        bool stakingUpdated = staking.updateStakingPool(
+            projectId,
+            stakeLimit,
+            active,
+            7 days // Default minimum staking period
+        );
+        require(
+            stakingUpdated,
+            "EmissionController: failed to update staking pool"
+        );
+
+        // Get and update project config in Innovation Units
+        IInnovationUnits.ProjectIUConfig memory config = innovationUnits
+            .getProjectConfig(projectId);
+
+        // Using a direct check for isActive rather than calling setProjectActive
+        if (config.isActive != active) {
+            // Need to implement our own solution to make IU active/inactive
+            // We could create an updatePricePerUnit call with a price of 0 to effectively disable it
+            // or handle in a different way depending on business requirements
+            if (!active) {
+                // Set price to 0 to effectively disable purchases
+                innovationUnits.updatePricePerUnit(projectId, 0);
+            } else {
+                // Restore original price or set a default price
+                // This is a placeholder - in a real implementation you'd store the original price
+                innovationUnits.updatePricePerUnit(projectId, 1e16); // 0.01 tokens
+            }
+        }
+
+        emit ProjectUpdated(projectId, stakeLimit, active);
+
+        return true;
+    }
+
+    /**
+     * @dev Assigns a creator to a project
+     * @param projectId ID of the project
+     * @param creator Address of the creator
+     * @return bool indicating if the assignment was successful
+     */
+    function assignCreator(
+        uint256 projectId,
+        address creator
+    ) external onlyOwner returns (bool) {
+        require(
+            projectRegistry[projectId],
+            "EmissionController: project does not exist"
+        );
+        require(
+            creator != address(0),
+            "EmissionController: cannot assign to zero address"
+        );
+
+        // Get project configuration to determine creator share
+        IInnovationUnits.ProjectIUConfig memory config = innovationUnits
+            .getProjectConfig(projectId);
+
+        // Calculate how many IUs the creator should get
+        uint256 creatorAmount = config.totalSupply.mul(config.creatorShare).div(
+            100 * PRECISION
+        );
+
+        // Allocate IUs to creator using allocateToContributor function instead
+        // Since allocateToCreator doesn't exist in the interface
+        bool success = innovationUnits.allocateToContributor(
+            creator,
+            projectId,
+            creatorAmount
+        );
+        require(success, "EmissionController: failed to assign creator");
+
+        emit CreatorAssigned(projectId, creator);
+
+        return true;
+    }
+
+    /**
+     * @dev Assigns a contributor to a project
+     * @param projectId ID of the project
+     * @param contributor Address of the contributor
+     * @param amount Amount of IUs to allocate
+     * @return bool indicating if the assignment was successful
+     */
+    function assignContributor(
+        uint256 projectId,
+        address contributor,
+        uint256 amount
+    ) external onlyOwner returns (bool) {
+        require(
+            projectRegistry[projectId],
+            "EmissionController: project does not exist"
+        );
+        require(
+            contributor != address(0),
+            "EmissionController: cannot assign to zero address"
+        );
+        require(
+            amount > 0,
+            "EmissionController: amount must be greater than zero"
+        );
+
+        // Allocate IUs to contributor
+        bool success = innovationUnits.allocateToContributor(
+            contributor,
+            projectId,
+            amount
+        );
+        require(success, "EmissionController: failed to assign contributor");
+
+        emit ContributorAssigned(projectId, contributor, amount);
+
+        return true;
+    }
+
+    /**
+     * @dev Checks if a project exists
+     * @param projectId ID of the project
+     * @return bool indicating if the project exists
+     */
+    function projectExists(uint256 projectId) external view returns (bool) {
+        return projectRegistry[projectId];
+    }
+
+    /**
+     * @dev Returns the number of projects
+     * @return uint256 the number of projects
+     */
+    function getProjectCount() external view returns (uint256) {
+        return projectCount;
     }
 }
