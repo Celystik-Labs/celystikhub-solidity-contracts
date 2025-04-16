@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.9;
 
 import "./interfaces/IEmissionController.sol";
 import "./interfaces/ICELToken.sol";
 import "./interfaces/IInnovationUnits.sol";
 import "./interfaces/IStaking.sol";
+import "./interfaces/IProjectFactory.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
@@ -37,6 +38,9 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // Staking contract
     IStaking public staking;
+
+    // Project Factory contract
+    IProjectFactory public projectFactory;
 
     // Emission parameters
     uint256 public emissionStartTime;
@@ -149,11 +153,29 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Sets the address of the ProjectFactory contract
+     * @param _projectFactoryAddress Address of the ProjectFactory contract
+     */
+    function setProjectFactoryAddress(
+        address _projectFactoryAddress
+    ) external onlyOwner {
+        require(
+            _projectFactoryAddress != address(0),
+            "EmissionController: invalid address"
+        );
+        projectFactory = IProjectFactory(_projectFactoryAddress);
+    }
+
+    /**
      * @dev Updates the PoI score for a project
      * @param projectId The ID of the project
      * @param score The new PoI score
      */
     function updatePoI(uint256 projectId, uint256 score) external onlyOwner {
+        require(
+            projectFactory.projectExists(projectId),
+            "EmissionController: project does not exist"
+        );
         projects[projectId].poiScore = score;
         emit PoIScoreUpdated(projectId, score);
     }
@@ -167,6 +189,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 weight
     ) external onlyOwner {
+        require(
+            projectFactory.projectExists(projectId),
+            "EmissionController: project does not exist"
+        );
         projects[projectId].stakingWeight = weight;
         emit StakingWeightUpdated(projectId, weight);
 
@@ -193,6 +219,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 weight
     ) external onlyOwner {
+        require(
+            projectFactory.projectExists(projectId),
+            "EmissionController: project does not exist"
+        );
         projects[projectId].iuWeight = weight;
         emit IUWeightUpdated(projectId, weight);
 
@@ -300,6 +330,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      * @param projectId The ID of the project
      */
     function claimRewards(uint256 projectId) external nonReentrant {
+        require(
+            projectFactory.projectExists(projectId),
+            "EmissionController: project does not exist"
+        );
         UserData storage userData = userProjects[projectId][msg.sender];
 
         // Calculate user's rewards
@@ -490,5 +524,68 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      */
     function getCELToken() external view override returns (address) {
         return address(celToken);
+    }
+
+    /**
+     * @dev Sets the last emission time (for testing purposes)
+     * @param timestamp New timestamp for last emission
+     * @return bool indicating if the update was successful
+     */
+    function setLastEmissionTime(
+        uint256 timestamp
+    ) external onlyOwner returns (bool) {
+        lastUpdateTime = timestamp;
+        return true;
+    }
+
+    /**
+     * @dev Sets the ProjectFactory contract address
+     * @param _projectFactoryAddress Address of the ProjectFactory contract
+     */
+    function setProjectFactory(
+        address _projectFactoryAddress
+    ) external onlyOwner {
+        require(
+            _projectFactoryAddress != address(0),
+            "EmissionController: zero address provided"
+        );
+        projectFactory = IProjectFactory(_projectFactoryAddress);
+    }
+
+    /**
+     * @dev Creates a new project by delegating to the ProjectFactory
+     * @param projectId ID of the project
+     * @param creatorShare Percentage of IUs allocated to creator (in basis points, 1% = 100)
+     * @param contributorShare Percentage of IUs reserved for contributors (in basis points)
+     * @param investorShare Percentage of IUs reserved for investors (in basis points)
+     * @param totalSupply Total supply of IUs for the project
+     * @param pricePerUnit Price per IU in CEL tokens
+     * @param stakeLimit Maximum stake limit for the project (0 = no limit)
+     * @return bool indicating if the creation was successful
+     */
+    function createProject(
+        uint256 projectId,
+        uint256 creatorShare,
+        uint256 contributorShare,
+        uint256 investorShare,
+        uint256 totalSupply,
+        uint256 pricePerUnit,
+        uint256 stakeLimit
+    ) external onlyOwner returns (bool) {
+        require(
+            address(projectFactory) != address(0),
+            "EmissionController: ProjectFactory not set"
+        );
+
+        return
+            projectFactory.createProject(
+                projectId,
+                creatorShare,
+                contributorShare,
+                investorShare,
+                totalSupply,
+                pricePerUnit,
+                stakeLimit
+            );
     }
 }

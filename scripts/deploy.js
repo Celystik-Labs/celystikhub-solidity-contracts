@@ -4,6 +4,9 @@
 // When running the script with `npx hardhat run <script>` you'll find the Hardhat
 // Runtime Environment's members available in the global scope.
 const hre = require("hardhat");
+const { ethers } = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
@@ -13,82 +16,127 @@ async function main() {
   // manually to make sure everything is compiled
   // await hre.run('compile');
 
-  console.log("Deploying contracts...");
+  console.log("Starting deployment of Celystik Hub contracts...");
 
-  // Get the deployer's account
-  const [deployer] = await hre.ethers.getSigners();
-  console.log("Deploying with account:", deployer.address);
+  // Get the signer accounts
+  const [deployer] = await ethers.getSigners();
+  console.log(`Deploying contracts with the account: ${deployer.address}`);
+  console.log(`Account balance: ${ethers.utils.formatEther(await deployer.getBalance())} ETH`);
+
+  // Constants for deployment
+  const INITIAL_SUPPLY = ethers.utils.parseEther("1000000"); // 1 million tokens
+  const TOKEN_CAP = ethers.utils.parseEther("10000000"); // 10 million tokens
+  const EMISSION_CAP = ethers.utils.parseEther("20000"); // 20,000 tokens per period
+  const DECAY_RATE = ethers.utils.parseEther("0.05"); // 5% decay
 
   // Deploy CEL Token
-  const CELToken = await hre.ethers.getContractFactory("CELToken");
+  console.log("\nDeploying CEL Token...");
+  const CELToken = await ethers.getContractFactory("CELToken");
   const celToken = await CELToken.deploy(
-    "Celystik Hub Token", // name
-    "CEL",               // symbol
-    hre.ethers.utils.parseEther("10000000"),  // Initial supply: 10 million tokens
-    hre.ethers.utils.parseEther("100000000") // Cap: 100 million tokens
+    "Celystik Hub Token",  // Name
+    "CEL",                 // Symbol
+    INITIAL_SUPPLY,        // Initial supply
+    TOKEN_CAP              // Cap
   );
   await celToken.deployed();
-  console.log("CELToken deployed to:", celToken.address);
-
-  // Deploy EmissionController
-  const EmissionController = await hre.ethers.getContractFactory("EmissionController");
-  const emissionController = await EmissionController.deploy(
-    celToken.address,                      // CEL token address
-    hre.ethers.utils.parseEther("100000"), // Initial emission cap per period: 100k tokens
-    hre.ethers.utils.parseEther("0.05")    // Emission decay rate: 5%
-  );
-  await emissionController.deployed();
-  console.log("EmissionController deployed to:", emissionController.address);
+  console.log(`CEL Token deployed to: ${celToken.address}`);
 
   // Deploy InnovationUnits
-  const InnovationUnits = await hre.ethers.getContractFactory("InnovationUnits");
-  const innovationUnits = await InnovationUnits.deploy(
-    celToken.address // CEL token address
-  );
+  console.log("\nDeploying InnovationUnits...");
+  const InnovationUnits = await ethers.getContractFactory("InnovationUnits");
+  const innovationUnits = await InnovationUnits.deploy(celToken.address);
   await innovationUnits.deployed();
-  console.log("InnovationUnits deployed to:", innovationUnits.address);
+  console.log(`InnovationUnits deployed to: ${innovationUnits.address}`);
 
   // Deploy Staking
-  const Staking = await hre.ethers.getContractFactory("Staking");
-  const staking = await Staking.deploy(
-    celToken.address // CEL token address
-  );
+  console.log("\nDeploying Staking...");
+  const Staking = await ethers.getContractFactory("Staking");
+  const staking = await Staking.deploy(celToken.address);
   await staking.deployed();
-  console.log("Staking deployed to:", staking.address);
+  console.log(`Staking deployed to: ${staking.address}`);
 
-  // Set up permissions
-  console.log("Setting up permissions...");
-  
-  // Give mint permission to EmissionController
-  await celToken.setMinter(emissionController.address, true);
-  console.log("Granted mint permission to EmissionController");
+  // Deploy EmissionController
+  console.log("\nDeploying EmissionController...");
+  const EmissionController = await ethers.getContractFactory("EmissionController");
+  const emissionController = await EmissionController.deploy(
+    celToken.address,
+    EMISSION_CAP,
+    DECAY_RATE
+  );
+  await emissionController.deployed();
+  console.log(`EmissionController deployed to: ${emissionController.address}`);
 
-  // Transfer ownership of InnovationUnits to EmissionController
-  await innovationUnits.transferOwnership(emissionController.address);
-  console.log("Transferred ownership of InnovationUnits to EmissionController");
+  // Deploy ProjectFactory
+  console.log("\nDeploying ProjectFactory...");
+  const ProjectFactory = await ethers.getContractFactory("ProjectFactory");
+  const projectFactory = await ProjectFactory.deploy(
+    innovationUnits.address,
+    staking.address
+  );
+  await projectFactory.deployed();
+  console.log(`ProjectFactory deployed to: ${projectFactory.address}`);
 
-  // Transfer ownership of Staking to EmissionController
-  await staking.transferOwnership(emissionController.address);
-  console.log("Transferred ownership of Staking to EmissionController");
+  // Set up contract relationships
+  console.log("\nSetting up contract relationships...");
 
-  console.log("Deployment completed successfully!");
-  
-  // Return the deployed contract addresses
-  return {
+  // 1. Set EmissionController as a minter for CEL tokens
+  console.log("Setting EmissionController as a minter for CEL tokens...");
+  const minterTx = await celToken.setMinter(emissionController.address, true);
+  await minterTx.wait();
+
+  // 2. Set contract addresses in EmissionController
+  console.log("Setting contract addresses in EmissionController...");
+  let tx = await emissionController.setInnovationUnitsAddress(innovationUnits.address);
+  await tx.wait();
+  tx = await emissionController.setStakingAddress(staking.address);
+  await tx.wait();
+  tx = await emissionController.setProjectFactoryAddress(projectFactory.address);
+  await tx.wait();
+
+  // 3. Transfer ownership of contracts
+  console.log("Transferring ownership of contracts...");
+  tx = await innovationUnits.transferOwnership(emissionController.address);
+  await tx.wait();
+  tx = await staking.transferOwnership(emissionController.address);
+  await tx.wait();
+  tx = await emissionController.transferOwnership(projectFactory.address);
+  await tx.wait();
+
+  // Save contract addresses to a file
+  console.log("\nSaving contract addresses to file...");
+  const deploymentInfo = {
+    network: network.name,
     celToken: celToken.address,
-    emissionController: emissionController.address,
     innovationUnits: innovationUnits.address,
-    staking: staking.address
+    staking: staking.address,
+    emissionController: emissionController.address,
+    projectFactory: projectFactory.address,
+    deployer: deployer.address,
+    timestamp: new Date().toISOString(),
   };
+
+  const deploymentDir = path.join(__dirname, "../deployments");
+  if (!fs.existsSync(deploymentDir)) {
+    fs.mkdirSync(deploymentDir);
+  }
+
+  const filePath = path.join(deploymentDir, `${network.name}-deployment.json`);
+  fs.writeFileSync(filePath, JSON.stringify(deploymentInfo, null, 2));
+  console.log(`Deployment information saved to ${filePath}`);
+
+  console.log("\nDeployment completed successfully!");
+  console.log("Summary:");
+  console.log(`CEL Token: ${celToken.address}`);
+  console.log(`InnovationUnits: ${innovationUnits.address}`);
+  console.log(`Staking: ${staking.address}`);
+  console.log(`EmissionController: ${emissionController.address}`);
+  console.log(`ProjectFactory: ${projectFactory.address}`);
 }
 
 // We recommend this pattern to be able to use async/await everywhere
 // and properly handle errors.
 main()
-  .then((deployedContracts) => {
-    console.log("Deployed contract addresses:", deployedContracts);
-    process.exit(0);
-  })
+  .then(() => process.exit(0))
   .catch((error) => {
     console.error(error);
     process.exit(1);

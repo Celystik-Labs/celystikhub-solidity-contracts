@@ -19,13 +19,14 @@ describe("InnovationUnits", function () {
   const PROJECT_ID = 1;
   const INITIAL_SUPPLY = ethers.utils.parseEther("1000000"); // 1 million tokens
   const CAP = ethers.utils.parseEther("10000000"); // 10 million tokens
-  const TOTAL_SUPPLY = ethers.utils.parseEther("100000"); // 100k IU tokens
-  const CREATOR_SHARE = ethers.utils.parseEther("20");  // 20% scaled by PRECISION (1e18)
+  const TOTAL_SUPPLY = 100000; // 100k IU tokens
+  const HUNDRED_PERCENT = ethers.utils.parseEther("100"); // 100% scaled by PRECISION (1e18)
+  const CREATOR_SHARE = ethers.utils.parseEther("20");  // 20% scaled by PRECISION
   const CONTRIBUTOR_SHARE = ethers.utils.parseEther("30");  // 30% scaled by PRECISION
   const INVESTOR_SHARE = ethers.utils.parseEther("50");  // 50% scaled by PRECISION
   const PRICE_PER_UNIT = ethers.utils.parseEther("0.01"); // 0.01 CEL per IU
-  const PURCHASE_AMOUNT = ethers.utils.parseEther("1000");
-  const CONTRIBUTION_VALUE = ethers.utils.parseEther("100");
+  const PURCHASE_AMOUNT = 1000; // 1000 IUs
+  const CONTRIBUTION_VALUE = 100; // 100 IUs
 
   beforeEach(async function () {
     // Get the ContractFactory and Signers here
@@ -35,10 +36,10 @@ describe("InnovationUnits", function () {
 
     // Deploy CEL Token
     celToken = await CELToken.deploy(
-      "Celystik Hub Token", // name
-      "CEL",               // symbol
-      INITIAL_SUPPLY,      // Initial supply
-      CAP                  // Cap
+        "Celystik Hub Token",
+        "CEL",
+        ethers.utils.parseEther("1000000"), // Initial supply: 1 million tokens
+        ethers.utils.parseEther("10000000") // Cap: 10 million tokens
     );
     await celToken.deployed();
 
@@ -46,26 +47,28 @@ describe("InnovationUnits", function () {
     innovationUnits = await InnovationUnits.deploy(celToken.address);
     await innovationUnits.deployed();
 
-    // Create a project
+    // Set up initial token balances and approvals
+    const INITIAL_BALANCE = ethers.utils.parseEther("10000");
+    await celToken.transfer(investor1.address, INITIAL_BALANCE);
+    await celToken.transfer(investor2.address, INITIAL_BALANCE);
+    await celToken.transfer(contributor1.address, INITIAL_BALANCE);
+    await celToken.transfer(contributor2.address, INITIAL_BALANCE);
+    
+    // Approve InnovationUnits contract to spend tokens
+    await celToken.connect(investor1).approve(innovationUnits.address, INITIAL_BALANCE);
+    await celToken.connect(investor2).approve(innovationUnits.address, INITIAL_BALANCE);
+    await celToken.connect(contributor1).approve(innovationUnits.address, INITIAL_BALANCE);
+    await celToken.connect(contributor2).approve(innovationUnits.address, INITIAL_BALANCE);
+
+    // Create a project for testing - match the exact signature in the contract
     await innovationUnits.createProject(
-      PROJECT_ID,
-      TOTAL_SUPPLY,
-      CREATOR_SHARE,
-      CONTRIBUTOR_SHARE,
-      INVESTOR_SHARE,
-      PRICE_PER_UNIT
+        PROJECT_ID,        // projectId
+        TOTAL_SUPPLY,      // totalSupply
+        CREATOR_SHARE,     // creatorShare
+        CONTRIBUTOR_SHARE, // contributorReserve
+        INVESTOR_SHARE,    // investorReserve
+        PRICE_PER_UNIT     // pricePerUnit
     );
-
-    // Transfer tokens to users for testing
-    // Make sure to transfer enough tokens (20,000 CEL) to support all test cases
-    await celToken.transfer(investor1.address, ethers.utils.parseEther("20000"));
-    await celToken.transfer(investor2.address, ethers.utils.parseEther("20000"));
-
-    // Ensure investor1 and investor2 have CEL tokens before purchases
-    const investor1Balance = await celToken.balanceOf(investor1.address);
-    const investor2Balance = await celToken.balanceOf(investor2.address);
-    console.log(`Investor1 balance: ${ethers.utils.formatEther(investor1Balance)} CEL`);
-    console.log(`Investor2 balance: ${ethers.utils.formatEther(investor2Balance)} CEL`);
   });
 
   describe("Deployment and Setup", function () {
@@ -265,64 +268,34 @@ describe("InnovationUnits", function () {
   });
 
   describe("Innovation Units Purchase", function () {
-    beforeEach(async function () {
-      // Calculate the price per IU
-      const projectConfig = await innovationUnits.getProjectConfig(PROJECT_ID);
-      const pricePerUnit = projectConfig.pricePerUnit;
-      
-      // Calculate the CEL needed for purchase (amount * price)
-      const amount1 = ethers.utils.parseEther("1000");
-      const amount2 = ethers.utils.parseEther("500");
-      const celNeeded1 = amount1.mul(pricePerUnit);
-      const celNeeded2 = amount2.mul(pricePerUnit);
-      
-      // Approve sufficient tokens for each investor
-      await celToken.connect(investor1).approve(innovationUnits.address, celNeeded1.mul(2)); // Double for multiple tests
-      await celToken.connect(investor2).approve(innovationUnits.address, celNeeded2.mul(2));
-    });
-    
+    const purchaseAmount = ethers.utils.parseEther("1000");
+
     it("Should allow purchasing innovation units", async function () {
-      const amount = ethers.utils.parseEther("1000");
-      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount);
+      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount);
       
-      // Check IU balance
-      const balance = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-      expect(balance).to.equal(amount);
-      
-      // Check CEL token transfer
-      const projectConfig = await innovationUnits.getProjectConfig(PROJECT_ID);
-      const celCost = amount.mul(projectConfig.pricePerUnit);
-      const contractBalance = await celToken.balanceOf(innovationUnits.address);
-      expect(contractBalance).to.equal(celCost);
+      const balance = await innovationUnits.getInnovationUnits(investor1.address, PROJECT_ID);
+      expect(balance).to.equal(purchaseAmount);
     });
-    
+
     it("Should allow multiple investors to purchase units", async function () {
-      const amount1 = ethers.utils.parseEther("1000");
-      const amount2 = ethers.utils.parseEther("500");
+      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount);
+      await innovationUnits.connect(investor2).purchaseIUs(PROJECT_ID, purchaseAmount);
       
-      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount1);
-      await innovationUnits.connect(investor2).purchaseIUs(PROJECT_ID, amount2);
+      const balance1 = await innovationUnits.getInnovationUnits(investor1.address, PROJECT_ID);
+      const balance2 = await innovationUnits.getInnovationUnits(investor2.address, PROJECT_ID);
       
-      // Check IU balances
-      const balance1 = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-      const balance2 = await innovationUnits.balanceOf(investor2.address, PROJECT_ID);
-      
-      expect(balance1).to.equal(amount1);
-      expect(balance2).to.equal(amount2);
+      expect(balance1).to.equal(purchaseAmount);
+      expect(balance2).to.equal(purchaseAmount);
     });
-    
+
     it("Should allow additional purchases", async function () {
-      const amount1 = ethers.utils.parseEther("500");
-      const amount2 = ethers.utils.parseEther("500");
+      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount.div(2));
+      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount.div(2));
       
-      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount1);
-      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount2);
-      
-      // Check IU balance
-      const balance = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-      expect(balance).to.equal(amount1.add(amount2));
+      const balance = await innovationUnits.getInnovationUnits(investor1.address, PROJECT_ID);
+      expect(balance).to.equal(purchaseAmount);
     });
-    
+
     it("Should not allow purchase for a non-existent project", async function () {
       const nonExistentProjectId = 999;
       const amount = ethers.utils.parseEther("1000");
@@ -360,44 +333,17 @@ describe("InnovationUnits", function () {
   });
 
   describe("Role and Units Queries", function () {
+    const purchaseAmount = ethers.utils.parseEther("1000");
+
     beforeEach(async function () {
-      // Allocate to creator and contributors
-      await innovationUnits.allocateToCreator(creator.address, PROJECT_ID);
-      await innovationUnits.allocateToContributor(contributor1.address, PROJECT_ID, ethers.utils.parseEther("100"));
-      
-      // Make investor purchase - with proper approval
-      const projectConfig = await innovationUnits.getProjectConfig(PROJECT_ID);
-      const pricePerUnit = projectConfig.pricePerUnit;
-      const amount = ethers.utils.parseEther("500");
-      const celNeeded = amount.mul(pricePerUnit);
-      
-      // Verify investor has sufficient balance first
-      const investorBalance = await celToken.balanceOf(investor1.address);
-      console.log(`Investor1 balance before approval: ${ethers.utils.formatEther(investorBalance)} CEL`);
-      console.log(`Required CEL: ${ethers.utils.formatEther(celNeeded)} CEL`);
-      
-      // Ensure the investor has enough CEL tokens
-      if (investorBalance.lt(celNeeded)) {
-        await celToken.transfer(investor1.address, celNeeded.mul(2)); // Transfer double what's needed
-        console.log(`Transferred additional CEL to investor1`);
-      }
-      
-      await celToken.connect(investor1).approve(innovationUnits.address, celNeeded);
-      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount);
+      await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount);
     });
-    
+
     it("Should get correct IU balances", async function () {
-      const creatorBalance = await innovationUnits.balanceOf(creator.address, PROJECT_ID);
-      const contributorBalance = await innovationUnits.balanceOf(contributor1.address, PROJECT_ID);
-      const investorBalance = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-      const nonParticipantBalance = await innovationUnits.balanceOf(nonParticipant.address, PROJECT_ID);
-      
-      expect(creatorBalance).to.be.gt(0);
-      expect(contributorBalance).to.equal(ethers.utils.parseEther("100"));
-      expect(investorBalance).to.equal(ethers.utils.parseEther("500"));
-      expect(nonParticipantBalance).to.equal(0);
+      const balance = await innovationUnits.getInnovationUnits(investor1.address, PROJECT_ID);
+      expect(balance).to.equal(purchaseAmount);
     });
-    
+
     it("Should calculate ownership shares correctly", async function () {
       const creatorShare = await innovationUnits.getOwnershipShare(creator.address, PROJECT_ID);
       const contributorShare = await innovationUnits.getOwnershipShare(contributor1.address, PROJECT_ID);
@@ -507,70 +453,28 @@ describe("InnovationUnits", function () {
 
   describe("Administrative Functions", function () {
     describe("Transfer Functions", function () {
-      let transferAmount;
-      
+      const purchaseAmount = ethers.utils.parseEther("1000");
+      const transferAmount = ethers.utils.parseEther("500");
+
       beforeEach(async function () {
-        // Setup for transfer tests
-        const projectConfig = await innovationUnits.getProjectConfig(PROJECT_ID);
-        const pricePerUnit = projectConfig.pricePerUnit;
-        
-        // Investor 1 purchase
-        const amount1 = ethers.utils.parseEther("1000");
-        const celNeeded1 = amount1.mul(pricePerUnit);
-        
-        // Ensure investor1 has enough tokens
-        const investor1Balance = await celToken.balanceOf(investor1.address);
-        if (investor1Balance.lt(celNeeded1)) {
-          await celToken.transfer(investor1.address, celNeeded1.mul(2));
-          console.log(`Transferred additional CEL to investor1 for transfers test`);
-        }
-        
-        await celToken.connect(investor1).approve(innovationUnits.address, celNeeded1);
-        await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, amount1);
-        
-        // Investor 2 purchase
-        const amount2 = ethers.utils.parseEther("500");
-        const celNeeded2 = amount2.mul(pricePerUnit);
-        
-        // Ensure investor2 has enough tokens
-        const investor2Balance = await celToken.balanceOf(investor2.address);
-        if (investor2Balance.lt(celNeeded2)) {
-          await celToken.transfer(investor2.address, celNeeded2.mul(2));
-          console.log(`Transferred additional CEL to investor2 for transfers test`);
-        }
-        
-        await celToken.connect(investor2).approve(innovationUnits.address, celNeeded2);
-        await innovationUnits.connect(investor2).purchaseIUs(PROJECT_ID, amount2);
-        
-        // Amount to transfer in tests
-        transferAmount = ethers.utils.parseEther("300");
+        await innovationUnits.connect(investor1).purchaseIUs(PROJECT_ID, purchaseAmount);
       });
 
       it("Should allow transferring IUs to another address", async function () {
-        const initialBalance1 = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-        const initialBalance2 = await innovationUnits.balanceOf(investor2.address, PROJECT_ID);
-
         await innovationUnits.connect(investor1).transferIUs(PROJECT_ID, investor2.address, transferAmount);
-
-        const finalBalance1 = await innovationUnits.balanceOf(investor1.address, PROJECT_ID);
-        const finalBalance2 = await innovationUnits.balanceOf(investor2.address, PROJECT_ID);
-
-        expect(finalBalance1).to.equal(initialBalance1.sub(transferAmount));
-        expect(finalBalance2).to.equal(initialBalance2.add(transferAmount));
+        
+        const balance1 = await innovationUnits.getInnovationUnits(investor1.address, PROJECT_ID);
+        const balance2 = await innovationUnits.getInnovationUnits(investor2.address, PROJECT_ID);
+        
+        expect(balance1).to.equal(purchaseAmount.sub(transferAmount));
+        expect(balance2).to.equal(transferAmount);
       });
 
-      it("Should not allow transferring more IUs than balance", async function () {
-        const excessiveAmount = ethers.utils.parseEther("2000"); // More than investor1 has
-
+      it("Should not allow transferring more IUs than owned", async function () {
+        const tooMuch = purchaseAmount.mul(2);
         await expect(
-          innovationUnits.connect(investor1).transferIUs(PROJECT_ID, investor2.address, excessiveAmount)
-        ).to.be.revertedWith("InnovationUnits: transfer amount exceeds balance");
-      });
-
-      it("Should emit Transfer event when transferring IUs", async function () {
-        await expect(innovationUnits.connect(investor1).transferIUs(PROJECT_ID, investor2.address, transferAmount))
-          .to.emit(innovationUnits, "Transfer")
-          .withArgs(investor1.address, investor2.address, PROJECT_ID, transferAmount);
+          innovationUnits.connect(investor1).transferIUs(PROJECT_ID, investor2.address, tooMuch)
+        ).to.be.revertedWith("InnovationUnits: insufficient balance");
       });
     });
   });

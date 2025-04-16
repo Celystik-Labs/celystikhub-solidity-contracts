@@ -41,6 +41,17 @@ interface IInnovationUnits {
     ) external returns (bool);
 
     /**
+     * @dev Allocates IUs to a creator after project creation
+     * @param creator Address of the creator
+     * @param projectId ID of the project
+     * @return bool indicating if the allocation was successful
+     */
+    function allocateToCreator(
+        address creator,
+        uint256 projectId
+    ) external returns (bool);
+
+    /**
      * @dev Allocates IUs to a contributor for completing a task
      * @param contributor Address of the contributor
      * @param projectId ID of the project
@@ -167,6 +178,17 @@ interface IInnovationUnits {
         address to,
         uint256 projectId,
         uint256 amount
+    ) external returns (bool);
+
+    /**
+     * @dev Activates or deactivates a project
+     * @param projectId ID of the project
+     * @param active Whether the project should be active
+     * @return bool indicating if the update was successful
+     */
+    function setProjectActive(
+        uint256 projectId,
+        bool active
     ) external returns (bool);
 
     /**
