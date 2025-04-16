@@ -75,12 +75,13 @@ describe("EmissionController", function () {
     await emissionController.setStakingAddress(staking.address);
 
     // Create project in InnovationUnits
-    await emissionController.createProject(
+    await innovationUnits.createProject(
       PROJECT_ID,
+      TOTAL_SUPPLY,
       CREATOR_SHARE,
       CONTRIBUTOR_SHARE,
       INVESTOR_SHARE,
-      STAKE_LIMIT
+      PRICE_PER_UNIT
     );
 
     // Distribute some tokens for testing
