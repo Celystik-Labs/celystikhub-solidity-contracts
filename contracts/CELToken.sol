@@ -15,33 +15,26 @@ import "./interfaces/ICELToken.sol";
  * - Minting with authorized minters
  * - Burning with authorized burners
  * - Pausable transfers
- * - Maximum supply (cap)
  */
 contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
-    uint256 private _cap;
+
 
     // Role-based access control for minters and burners
     mapping(address => bool) private _minters;
     mapping(address => bool) private _burners;
 
     /**
-     * @dev Sets the values for {name}, {symbol}, and {cap}.
+    
      *
      * All of these values are immutable: they can only be set once during construction.
      */
     constructor(
         string memory name,
         string memory symbol,
-        uint256 initialSupply,
-        uint256 tokenCap
+        uint256 initialSupply
+        
     ) ERC20(name, symbol) {
-        require(tokenCap > 0, "CELToken: cap is 0");
-        require(
-            initialSupply <= tokenCap,
-            "CELToken: initial supply exceeds cap"
-        );
 
-        _cap = tokenCap;
 
         // Initialize sender as minter and burner
         _minters[_msgSender()] = true;
@@ -78,12 +71,7 @@ contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
         super.transferOwnership(newOwner);
     }
 
-    /**
-     * @dev See {ICELToken-cap}.
-     */
-    function cap() public view override returns (uint256) {
-        return _cap;
-    }
+    
 
     /**
      * @dev See {ICELToken-mint}.
@@ -91,14 +79,10 @@ contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
      * Requirements:
      *
      * - the caller must have the {minter} role.
-     * - `amount` cannot cause the total supply to exceed the cap.
+
      */
     function mint(address account, uint256 amount) public override {
         require(_minters[_msgSender()], "CELToken: caller is not a minter");
-        require(
-            ERC20.totalSupply() + amount <= cap(),
-            "CELToken: cap exceeded"
-        );
 
         _mint(account, amount);
     }

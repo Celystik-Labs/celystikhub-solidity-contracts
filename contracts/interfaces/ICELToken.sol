@@ -76,10 +76,7 @@ interface ICELToken is IERC20 {
      */
     function isBurner(address account) external view returns (bool);
 
-    /**
-     * @dev Returns the maximum amount of tokens that can be minted
-     */
-    function cap() external view returns (uint256);
+
 
     /**
      * @dev Pauses all token transfers
