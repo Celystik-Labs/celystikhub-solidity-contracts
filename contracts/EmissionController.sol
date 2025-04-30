@@ -19,15 +19,27 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // Constants for emission calculations
     uint256 private constant SECONDS_IN_DAY = 86400;
-    uint256 private constant DAYS_IN_EMISSION_PERIOD = 7; // 1 week period
-    uint256 private constant EMISSION_PERIOD_SECONDS =
-        SECONDS_IN_DAY * DAYS_IN_EMISSION_PERIOD;
     uint256 private constant PRECISION = 1e18;
 
-    // Alpha and Beta parameters for emission formula
-    // E_i = (S_i^α × I_i^β) / Σ(S_j^α × I_j^β)
-    uint256 public alpha = 1 * PRECISION; // Weight for staking (1.0 = 100%)
-    uint256 public beta = 1 * PRECISION; // Weight for IU holdings (1.0 = 100%)
+    // Emission period configuration
+    uint256 public daysInEmissionPeriod = 7; // Default: 1 week period (configurable)
+    uint256 public emissionPeriodSeconds = SECONDS_IN_DAY * 7; // Calculated based on daysInEmissionPeriod
+
+    // Distribution parameters
+    uint256 public iuHolderShare = (80 * PRECISION) / 100; // 80% to IU holders (configurable)
+    uint256 public stakerShare = (20 * PRECISION) / 100; // 20% to stakers (configurable)
+
+    // Impact score calculation parameters
+    uint256 public stakingScoreWeight = PRECISION / 2; // 50% weight for staking score (configurable)
+    uint256 public metricsScoreWeight = PRECISION / 2; // 50% weight for metrics score (configurable)
+
+    // Platform emission calculation parameters
+    uint256 public platformStakingWeight = PRECISION / 2; // 50% weight for platform staking (configurable)
+    uint256 public platformMetricsWeight = PRECISION / 2; // 50% weight for platform metrics (configurable)
+
+    // Alpha and Beta parameters for emission formula (now used for staking score calculation)
+    uint256 public alpha = 1 * PRECISION; // Weight for stake amount (1.0 = 100%)
+    uint256 public beta = 1 * PRECISION; // Weight for stake duration (1.0 = 100%)
 
     // CEL Token contract
     ICELToken public celToken;
@@ -53,13 +65,18 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // Project data structures
     struct ProjectData {
-        uint256 poiScore; // PoI score for the project
-        uint256 stakingWeight; // Total staking weight
-        uint256 iuWeight; // Total IU weight
+        uint256 poiScore; // Proof of Impact score for the project
+        uint256 stakingScore; // Total staking score (time-weighted)
+        uint256 metricsScore; // Score based on project metrics
+        uint256 impactScore; // Combined score from staking and metrics
         uint256 totalEmissions; // Total emissions allocated to this project
+        uint256 contributorCount; // Number of contributors
+        uint256 investorCount; // Number of investors
+        uint256 totalStaked; // Total CEL tokens staked on the project
     }
 
     struct UserData {
+        uint256 stakingScore; // User's staking score (time-weighted)
         uint256 stakingShare; // User's share of staking in a project
         uint256 iuShare; // User's share of IUs in a project
         uint256 pendingRewards; // Unclaimed rewards
@@ -71,8 +88,47 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     mapping(uint256 => mapping(address => UserData)) public userProjects; // projectId => user => UserData
     mapping(uint256 => uint256) public projectEmissionsPerPeriod; // projectId => emissions per period
 
+    // Platform metrics
+    uint256 public platformTotalStakingScore;
+    uint256 public platformMetricsScore;
+    uint256 public platformImpactScore;
+
     // Array of active project IDs
     uint256[] public activeProjects;
+
+    // Additional events for new functionality
+    event EmissionPeriodUpdated(uint256 daysInPeriod, uint256 periodSeconds);
+    event ImpactScoreWeightsUpdated(
+        uint256 stakingWeight,
+        uint256 metricsWeight
+    );
+    event PlatformEmissionWeightsUpdated(
+        uint256 stakingWeight,
+        uint256 metricsWeight
+    );
+    event StakingScoreParametersUpdated(uint256 alpha, uint256 beta);
+    event ProjectImpactScoreUpdated(
+        uint256 indexed projectId,
+        uint256 impactScore
+    );
+    event ProjectMetricsScoreUpdated(
+        uint256 indexed projectId,
+        uint256 metricsScore
+    );
+    event ProjectStakingScoreUpdated(
+        uint256 indexed projectId,
+        uint256 stakingScore
+    );
+    event UserStakingScoreUpdated(
+        uint256 indexed projectId,
+        address indexed user,
+        uint256 stakingScore
+    );
+    event PlatformImpactScoreUpdated(
+        uint256 totalStakingScore,
+        uint256 metricsScore,
+        uint256 impactScore
+    );
 
     // Events
     event PoIScoreUpdated(uint256 indexed projectId, uint256 newScore);
@@ -97,6 +153,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 periodEmissionCap,
         uint256 decayRate
     );
+    event DistributionSharesUpdated(uint256 iuHolderShare, uint256 stakerShare);
 
     // Project management events
     event ProjectUpdated(
@@ -189,7 +246,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 weight
     ) external onlyOwner {
-        projects[projectId].stakingWeight = weight;
+        projects[projectId].stakingScore = weight;
         emit StakingWeightUpdated(projectId, weight);
 
         // Add project to active projects if not already there
@@ -215,7 +272,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 weight
     ) external onlyOwner {
-        projects[projectId].iuWeight = weight;
+        projects[projectId].metricsScore = weight;
         emit IUWeightUpdated(projectId, weight);
 
         // Add project to active projects if not already there
@@ -263,54 +320,333 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Distributes emissions to projects based on the formula
-     * E_i = (S_i^α × I_i^β) / Σ(S_j^α × I_j^β)
+     * @dev Updates the distribution shares between IU holders and stakers
+     * @param _iuHolderShare Percentage share for IU holders (scaled by PRECISION)
+     * @param _stakerShare Percentage share for stakers (scaled by PRECISION)
+     */
+    function updateDistributionShares(
+        uint256 _iuHolderShare,
+        uint256 _stakerShare
+    ) external onlyOwner {
+        require(
+            _iuHolderShare.add(_stakerShare) == PRECISION,
+            "EmissionController: shares must add up to 100%"
+        );
+
+        iuHolderShare = _iuHolderShare;
+        stakerShare = _stakerShare;
+
+        emit DistributionSharesUpdated(iuHolderShare, stakerShare);
+    }
+
+    /**
+     * @dev Updates the emission period configuration
+     * @param _daysInPeriod Number of days in an emission period
+     */
+    function updateEmissionPeriodConfig(
+        uint256 _daysInPeriod
+    ) external onlyOwner {
+        require(
+            _daysInPeriod > 0,
+            "EmissionController: period must be positive"
+        );
+
+        daysInEmissionPeriod = _daysInPeriod;
+        emissionPeriodSeconds = SECONDS_IN_DAY * _daysInPeriod;
+
+        emit EmissionPeriodUpdated(daysInEmissionPeriod, emissionPeriodSeconds);
+    }
+
+    /**
+     * @dev Updates the impact score calculation weights
+     * @param _stakingWeight Weight for staking score in impact calculation
+     * @param _metricsWeight Weight for metrics score in impact calculation
+     */
+    function updateImpactScoreWeights(
+        uint256 _stakingWeight,
+        uint256 _metricsWeight
+    ) external onlyOwner {
+        require(
+            _stakingWeight.add(_metricsWeight) == PRECISION,
+            "EmissionController: weights must add up to 100%"
+        );
+
+        stakingScoreWeight = _stakingWeight;
+        metricsScoreWeight = _metricsWeight;
+
+        // Recalculate all project impact scores with new weights
+        for (uint256 i = 0; i < activeProjects.length; i++) {
+            uint256 projectId = activeProjects[i];
+            updateProjectImpactScore(projectId);
+        }
+
+        // Update platform impact score
+        updatePlatformImpactScore();
+
+        emit ImpactScoreWeightsUpdated(stakingScoreWeight, metricsScoreWeight);
+    }
+
+    /**
+     * @dev Updates the platform emission calculation weights
+     * @param _stakingWeight Weight for platform staking in emission calculation
+     * @param _metricsWeight Weight for platform metrics in emission calculation
+     */
+    function updatePlatformEmissionWeights(
+        uint256 _stakingWeight,
+        uint256 _metricsWeight
+    ) external onlyOwner {
+        require(
+            _stakingWeight.add(_metricsWeight) == PRECISION,
+            "EmissionController: weights must add up to 100%"
+        );
+
+        platformStakingWeight = _stakingWeight;
+        platformMetricsWeight = _metricsWeight;
+
+        // Update platform impact score
+        updatePlatformImpactScore();
+
+        emit PlatformEmissionWeightsUpdated(
+            platformStakingWeight,
+            platformMetricsWeight
+        );
+    }
+
+    /**
+     * @dev Updates the staking score calculation parameters
+     * @param _alpha Weight for stake amount
+     * @param _beta Weight for stake duration
+     */
+    function updateStakingScoreParameters(
+        uint256 _alpha,
+        uint256 _beta
+    ) external onlyOwner {
+        alpha = _alpha;
+        beta = _beta;
+
+        // Recalculate all staking scores with new parameters
+        for (uint256 i = 0; i < activeProjects.length; i++) {
+            uint256 projectId = activeProjects[i];
+            updateProjectStakingScore(projectId);
+        }
+
+        emit StakingScoreParametersUpdated(alpha, beta);
+    }
+
+    /**
+     * @dev Updates a project's staking score based on staking data
+     * @param projectId The ID of the project
+     */
+    function updateProjectStakingScore(uint256 projectId) public onlyOwner {
+        require(
+            projectRegistry[projectId],
+            "EmissionController: project does not exist"
+        );
+
+        // Get staking data from staking contract
+        IStaking.ProjectStakingPool memory pool = staking.getProjectStakingPool(
+            projectId
+        );
+        projects[projectId].totalStaked = pool.totalStaked;
+
+        // Get stakers
+        address[] memory projectStakers = staking.getStakers(projectId);
+        uint256 totalStakingScore = 0;
+
+        // Calculate staking score for each staker
+        for (uint256 i = 0; i < projectStakers.length; i++) {
+            address staker = projectStakers[i];
+            IStaking.UserStake memory userStake = staking.getUserStake(
+                staker,
+                projectId
+            );
+
+            // Calculate staking score using alpha and beta parameters
+            // S = amount^alpha * duration^beta
+            uint256 stakingScore = 0;
+            if (userStake.amount > 0) {
+                // Calculate stake duration in days
+                uint256 stakeDuration = userStake.lockPeriod.div(
+                    SECONDS_IN_DAY
+                );
+
+                // Apply weights to amount and duration
+                uint256 weightedAmount = userStake.amount **
+                    (alpha.div(PRECISION));
+                uint256 weightedDuration = stakeDuration **
+                    (beta.div(PRECISION));
+
+                // Calculate staking score
+                stakingScore = weightedAmount.mul(weightedDuration);
+
+                // Update user staking score
+                userProjects[projectId][staker].stakingScore = stakingScore;
+
+                // Emit event
+                emit UserStakingScoreUpdated(projectId, staker, stakingScore);
+            }
+
+            // Add to total
+            totalStakingScore = totalStakingScore.add(stakingScore);
+        }
+
+        // Update project staking score
+        projects[projectId].stakingScore = totalStakingScore;
+
+        // Update platform total staking score
+        platformTotalStakingScore = 0;
+        for (uint256 i = 0; i < activeProjects.length; i++) {
+            uint256 pId = activeProjects[i];
+            platformTotalStakingScore = platformTotalStakingScore.add(
+                projects[pId].stakingScore
+            );
+        }
+
+        // Update project impact score
+        updateProjectImpactScore(projectId);
+
+        emit ProjectStakingScoreUpdated(projectId, totalStakingScore);
+    }
+
+    /**
+     * @dev Updates a project's metrics score based on activity data
+     * @param projectId The ID of the project
+     * @param contributorCount Number of contributors
+     * @param investorCount Number of investors
+     * @param additionalMetric Optional additional metric (e.g., external data)
+     */
+    function updateProjectMetricsScore(
+        uint256 projectId,
+        uint256 contributorCount,
+        uint256 investorCount,
+        uint256 additionalMetric
+    ) external onlyOwner {
+        require(
+            projectRegistry[projectId],
+            "EmissionController: project does not exist"
+        );
+
+        // Store metrics data
+        projects[projectId].contributorCount = contributorCount;
+        projects[projectId].investorCount = investorCount;
+
+        // Calculate metrics score (example formula)
+        uint256 metricsScore = contributorCount
+            .mul(1000)
+            .add(investorCount.mul(500))
+            .add(additionalMetric);
+        projects[projectId].metricsScore = metricsScore;
+
+        // Update project impact score
+        updateProjectImpactScore(projectId);
+
+        emit ProjectMetricsScoreUpdated(projectId, metricsScore);
+    }
+
+    /**
+     * @dev Updates a project's impact score based on staking and metrics scores
+     * @param projectId The ID of the project
+     */
+    function updateProjectImpactScore(uint256 projectId) public {
+        ProjectData storage project = projects[projectId];
+
+        // Calculate impact score using weighted average of staking and metrics scores
+        uint256 impactScore = project
+            .stakingScore
+            .mul(stakingScoreWeight)
+            .add(project.metricsScore.mul(metricsScoreWeight))
+            .div(PRECISION);
+
+        // Update project impact score
+        project.impactScore = impactScore;
+
+        // Update platform impact score
+        updatePlatformImpactScore();
+
+        emit ProjectImpactScoreUpdated(projectId, impactScore);
+    }
+
+    /**
+     * @dev Updates the platform metrics score (for global emission control)
+     * @param _metricsScore New platform metrics score
+     */
+    function updatePlatformMetricsScore(
+        uint256 _metricsScore
+    ) external onlyOwner {
+        platformMetricsScore = _metricsScore;
+
+        // Update platform impact score
+        updatePlatformImpactScore();
+    }
+
+    /**
+     * @dev Updates the platform impact score based on staking and metrics
+     */
+    function updatePlatformImpactScore() public {
+        // Calculate platform impact score using weighted average
+        platformImpactScore = platformTotalStakingScore
+            .mul(platformStakingWeight)
+            .add(platformMetricsScore.mul(platformMetricsWeight))
+            .div(PRECISION);
+
+        emit PlatformImpactScoreUpdated(
+            platformTotalStakingScore,
+            platformMetricsScore,
+            platformImpactScore
+        );
+    }
+
+    /**
+     * @dev Calculates the emission cap based on platform impact score
+     * @return uint256 The calculated emission cap
+     */
+    function calculateEmissionCap() public view returns (uint256) {
+        // If platform impact score is 0, return 0 emissions
+        if (platformImpactScore == 0) {
+            return 0;
+        }
+
+        // Calculate emissions based on impact score and base cap
+        // This is a simple linear formula; can be adjusted as needed
+        return periodEmissionCap.mul(platformImpactScore).div(1e6);
+    }
+
+    /**
+     * @dev Distributes emissions to projects based on their impact scores
      */
     function distributeEmissions() external onlyOwner {
         // Ensure we're in a new period
         updateEmissionPeriod();
 
-        // Calculate total project weights
-        uint256 totalWeight = 0;
+        // Calculate total impact score across all projects
+        uint256 totalImpactScore = 0;
         for (uint256 i = 0; i < activeProjects.length; i++) {
             uint256 projectId = activeProjects[i];
             ProjectData storage project = projects[projectId];
 
-            // Skip projects with zero weights
-            if (project.stakingWeight == 0 || project.iuWeight == 0) continue;
+            // Skip projects with zero impact score
+            if (project.impactScore == 0) continue;
 
-            // Calculate project weight using the formula: (S_i^α × I_i^β)
-            uint256 stakingFactor = (project.stakingWeight **
-                (alpha / PRECISION));
-            uint256 iuFactor = (project.iuWeight ** (beta / PRECISION));
-            uint256 projectWeight = (stakingFactor * iuFactor) / PRECISION;
-
-            // Add to total weight
-            totalWeight = totalWeight.add(projectWeight);
+            // Add to total impact score
+            totalImpactScore = totalImpactScore.add(project.impactScore);
         }
 
-        // Skip if no projects have weight
-        if (totalWeight == 0) return;
+        // Skip if no projects have impact score
+        if (totalImpactScore == 0) return;
 
-        // Calculate emission per project
+        // Calculate emission per project based on impact score proportion
         uint256 availableEmission = getAvailableEmission();
         for (uint256 i = 0; i < activeProjects.length; i++) {
             uint256 projectId = activeProjects[i];
             ProjectData storage project = projects[projectId];
 
-            // Skip projects with zero weights
-            if (project.stakingWeight == 0 || project.iuWeight == 0) continue;
-
-            // Calculate project weight
-            uint256 stakingFactor = (project.stakingWeight **
-                (alpha / PRECISION));
-            uint256 iuFactor = (project.iuWeight ** (beta / PRECISION));
-            uint256 projectWeight = (stakingFactor * iuFactor) / PRECISION;
+            // Skip projects with zero impact score
+            if (project.impactScore == 0) continue;
 
             // Calculate emission share for this project
-            uint256 projectEmission = availableEmission.mul(projectWeight).div(
-                totalWeight
-            );
+            uint256 projectEmission = availableEmission
+                .mul(project.impactScore)
+                .div(totalImpactScore);
 
             // Update project emissions
             projectEmissionsPerPeriod[projectId] = projectEmission;
@@ -323,17 +659,27 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      */
     function claimRewards(uint256 projectId) external nonReentrant {
         UserData storage userData = userProjects[projectId][msg.sender];
+        ProjectData storage project = projects[projectId];
 
         // Calculate user's rewards
         uint256 projectEmission = projectEmissionsPerPeriod[projectId];
-        uint256 stakingRewards = projectEmission
-            .mul(userData.stakingShare)
-            .div(PRECISION)
-            .div(2); // 50% to stakers
+
+        // Calculate staking rewards based on staking score proportion
+        uint256 stakingRewards = 0;
+        if (project.stakingScore > 0 && userData.stakingScore > 0) {
+            stakingRewards = projectEmission
+                .mul(userData.stakingScore)
+                .div(project.stakingScore)
+                .mul(stakerShare)
+                .div(PRECISION);
+        }
+
+        // Calculate IU holder rewards based on IU holdings proportion
         uint256 iuRewards = projectEmission
             .mul(userData.iuShare)
             .div(PRECISION)
-            .div(2); // 50% to IU holders
+            .mul(iuHolderShare)
+            .div(PRECISION);
 
         uint256 totalRewards = stakingRewards.add(iuRewards);
         require(totalRewards > 0, "EmissionController: no rewards to claim");
@@ -438,12 +784,12 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      */
     function updateEmissionPeriod() public override {
         uint256 timeSinceStart = block.timestamp.sub(emissionStartTime);
-        uint256 newPeriod = timeSinceStart.div(EMISSION_PERIOD_SECONDS);
+        uint256 newPeriod = timeSinceStart.div(emissionPeriodSeconds);
 
         if (newPeriod > currentPeriod) {
             // Calculate decay for the new period
             uint256 periodsPassed = newPeriod.sub(currentPeriod);
-            uint256 newCap = periodEmissionCap;
+            uint256 newCap = calculateEmissionCap(); // Use dynamic cap calculation
 
             // Apply decay for each period passed
             for (uint256 i = 0; i < periodsPassed; i++) {
@@ -601,7 +947,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
             projectId,
             stakeLimit,
             active,
-            7 days // Default minimum staking period
+            7 days, // Default minimum staking period
+            730 days // Default maximum staking period (2 years)
         );
         require(
             stakingUpdated,

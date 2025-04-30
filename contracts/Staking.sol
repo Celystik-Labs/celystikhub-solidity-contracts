@@ -16,6 +16,9 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
 
     // Constants
     uint256 private constant PRECISION = 1e18;
+    uint256 private constant SECONDS_IN_DAY = 86400;
+    uint256 private constant MIN_STAKING_PERIOD_DEFAULT = 1 days;
+    uint256 private constant MAX_STAKING_PERIOD_DEFAULT = 730 days; // 2 years
 
     // CEL Token contract
     ICELToken public celToken;
@@ -48,11 +51,13 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
      * @dev Stakes CEL tokens on a project
      * @param projectId ID of the project
      * @param amount Amount of CEL tokens to stake
+     * @param lockPeriod Period to lock the stake (in seconds)
      * @return bool indicating if the staking was successful
      */
     function stake(
         uint256 projectId,
-        uint256 amount
+        uint256 amount,
+        uint256 lockPeriod
     ) external override nonReentrant returns (bool) {
         require(amount > 0, "Staking: stake amount must be greater than zero");
 
@@ -70,6 +75,16 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
             );
         }
 
+        // Validate lock period
+        require(
+            lockPeriod >= pool.minStakingPeriod,
+            "Staking: lock period below minimum"
+        );
+        require(
+            lockPeriod <= pool.maxStakingPeriod,
+            "Staking: lock period above maximum"
+        );
+
         // Transfer CEL tokens from staker to this contract
         require(
             celToken.transferFrom(msg.sender, address(this), amount),
@@ -84,6 +99,8 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
         if (userStake.amount == 0) {
             // First time staking for this project
             userStake.since = block.timestamp;
+            userStake.lockPeriod = lockPeriod;
+            userStake.unlockTime = block.timestamp.add(lockPeriod);
             userStake.lastRewardsClaimed = block.timestamp;
 
             // Add user to stakers list if not already there
@@ -91,11 +108,17 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
                 projectStakers[projectId].push(msg.sender);
                 isStaker[projectId][msg.sender] = true;
             }
+        } else {
+            // Adjust lock period if new stake has longer lock
+            if (lockPeriod > userStake.lockPeriod) {
+                userStake.lockPeriod = lockPeriod;
+                userStake.unlockTime = block.timestamp.add(lockPeriod);
+            }
         }
 
         userStake.amount = userStake.amount.add(amount);
 
-        emit Staked(projectId, msg.sender, amount, pool.totalStaked);
+        emit Staked(projectId, msg.sender, amount, pool.totalStaked, lockPeriod);
 
         return true;
     }
@@ -121,17 +144,20 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
             "Staking: unstake amount exceeds staked amount"
         );
 
-        // Check minimum staking period
-        uint256 minStakingPeriod = projectPools[projectId].minStakingPeriod;
-        if (minStakingPeriod > 0) {
-            require(
-                block.timestamp.sub(userStake.since) >= minStakingPeriod,
-                "Staking: minimum staking period not reached"
-            );
-        }
+        // Check if the lock period has passed
+        require(
+            block.timestamp >= userStake.unlockTime,
+            "Staking: tokens still locked"
+        );
 
         // Update user stake
         userStake.amount = userStake.amount.sub(amount);
+
+        // If completely unstaked, reset lock period
+        if (userStake.amount == 0) {
+            userStake.lockPeriod = 0;
+            userStake.unlockTime = 0;
+        }
 
         // Update total staked
         ProjectStakingPool storage pool = projectPools[projectId];
@@ -167,14 +193,18 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
             "Staking: staking pool already exists"
         );
 
+        // Validate staking periods
+        uint256 minPeriod = minStakingPeriod > 0 ? minStakingPeriod : MIN_STAKING_PERIOD_DEFAULT;
+        
         projectPools[projectId] = ProjectStakingPool({
             totalStaked: 0,
             stakeLimit: stakeLimit,
             enabled: true,
-            minStakingPeriod: minStakingPeriod
+            minStakingPeriod: minPeriod,
+            maxStakingPeriod: MAX_STAKING_PERIOD_DEFAULT
         });
 
-        emit StakingPoolCreated(projectId, stakeLimit, minStakingPeriod);
+        emit StakingPoolCreated(projectId, stakeLimit, minPeriod, MAX_STAKING_PERIOD_DEFAULT);
 
         return true;
     }
@@ -185,13 +215,15 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
      * @param stakeLimit Maximum amount of CEL that can be staked on the project (0 = no limit)
      * @param enabled Whether staking is enabled for this project
      * @param minStakingPeriod Minimum staking period in seconds
+     * @param maxStakingPeriod Maximum staking period in seconds
      * @return bool indicating if the update was successful
      */
     function updateStakingPool(
         uint256 projectId,
         uint256 stakeLimit,
         bool enabled,
-        uint256 minStakingPeriod
+        uint256 minStakingPeriod,
+        uint256 maxStakingPeriod
     ) external override onlyOwner returns (bool) {
         require(projectId > 0, "Staking: project ID must be greater than zero");
 
@@ -205,15 +237,31 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
             );
         }
 
+        // Validate staking periods
+        require(
+            minStakingPeriod > 0,
+            "Staking: minimum staking period must be greater than zero"
+        );
+        require(
+            maxStakingPeriod > minStakingPeriod,
+            "Staking: maximum staking period must be greater than minimum"
+        );
+        require(
+            maxStakingPeriod <= 730 days,
+            "Staking: maximum staking period cannot exceed 2 years"
+        );
+
         pool.stakeLimit = stakeLimit;
         pool.enabled = enabled;
         pool.minStakingPeriod = minStakingPeriod;
+        pool.maxStakingPeriod = maxStakingPeriod;
 
         emit StakingPoolUpdated(
             projectId,
             stakeLimit,
             enabled,
-            minStakingPeriod
+            minStakingPeriod,
+            maxStakingPeriod
         );
 
         return true;
@@ -288,6 +336,37 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Calculates the staking score for a user
+     * @param user Address of the user
+     * @param projectId ID of the project
+     * @return uint256 The user's staking score
+     */
+    function calculateStakingScore(
+        address user,
+        uint256 projectId
+    ) external view override returns (uint256) {
+        UserStake storage userStake = userStakes[projectId][user];
+        
+        if (userStake.amount == 0) {
+            return 0;
+        }
+        
+        // Base score is the staked amount
+        uint256 baseScore = userStake.amount;
+        
+        // Bonus for longer lock periods (up to 2x for max lock period)
+        uint256 lockBonus = userStake.lockPeriod.mul(PRECISION).div(MAX_STAKING_PERIOD_DEFAULT);
+        if (lockBonus > PRECISION) {
+            lockBonus = PRECISION; // Cap at 100% bonus
+        }
+        
+        // Apply bonus to base score
+        uint256 totalScore = baseScore.add(baseScore.mul(lockBonus).div(PRECISION));
+        
+        return totalScore;
+    }
+
+    /**
      * @dev Returns whether a user can unstake from a project
      * @param user Address of the user
      * @param projectId ID of the project
@@ -302,12 +381,7 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
             return false;
         }
 
-        uint256 minStakingPeriod = projectPools[projectId].minStakingPeriod;
-        if (minStakingPeriod > 0) {
-            return block.timestamp.sub(userStake.since) >= minStakingPeriod;
-        }
-
-        return true;
+        return block.timestamp >= userStake.unlockTime;
     }
 
     /**
@@ -321,21 +395,11 @@ contract Staking is IStaking, Ownable, ReentrancyGuard {
         uint256 projectId
     ) external view override returns (uint256) {
         UserStake storage userStake = userStakes[projectId][user];
-        if (userStake.amount == 0) {
+        if (userStake.amount == 0 || block.timestamp >= userStake.unlockTime) {
             return 0;
         }
 
-        uint256 minStakingPeriod = projectPools[projectId].minStakingPeriod;
-        if (minStakingPeriod == 0) {
-            return 0;
-        }
-
-        uint256 stakedFor = block.timestamp.sub(userStake.since);
-        if (stakedFor >= minStakingPeriod) {
-            return 0;
-        }
-
-        return minStakingPeriod.sub(stakedFor);
+        return userStake.unlockTime.sub(block.timestamp);
     }
 
     /**

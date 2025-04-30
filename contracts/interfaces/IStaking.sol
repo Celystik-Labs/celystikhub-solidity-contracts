@@ -12,6 +12,8 @@ interface IStaking {
     struct UserStake {
         uint256 amount; // Amount of CEL tokens staked
         uint256 since; // Timestamp when the stake was created
+        uint256 lockPeriod;
+        uint256 unlockTime;
         uint256 lastRewardsClaimed; // Timestamp of the last rewards claim
     }
 
@@ -23,15 +25,21 @@ interface IStaking {
         uint256 stakeLimit; // Maximum amount of CEL that can be staked on the project (0 = no limit)
         bool enabled; // Whether staking is enabled for this project
         uint256 minStakingPeriod; // Minimum staking period in seconds
+        uint256 maxStakingPeriod; // Maximum staking period in seconds
     }
 
     /**
      * @dev Stakes CEL tokens on a project
      * @param projectId ID of the project
      * @param amount Amount of CEL tokens to stake
+     * @param lockPeriod Period to lock the stake (in seconds)
      * @return bool indicating if the staking was successful
      */
-    function stake(uint256 projectId, uint256 amount) external returns (bool);
+    function stake(
+        uint256 projectId,
+        uint256 amount,
+        uint256 lockPeriod
+    ) external returns (bool);
 
     /**
      * @dev Unstakes CEL tokens from a project
@@ -60,13 +68,15 @@ interface IStaking {
      * @param stakeLimit Maximum amount of CEL that can be staked on the project (0 = no limit)
      * @param enabled Whether staking is enabled for this project
      * @param minStakingPeriod Minimum staking period in seconds
+     * @param maxStakingPeriod Maximum staking period in seconds
      * @return bool indicating if the update was successful
      */
     function updateStakingPool(
         uint256 projectId,
         uint256 stakeLimit,
         bool enabled,
-        uint256 minStakingPeriod
+        uint256 minStakingPeriod,
+        uint256 maxStakingPeriod
     ) external returns (bool);
 
     /**
@@ -119,6 +129,17 @@ interface IStaking {
     ) external view returns (uint256);
 
     /**
+     * @dev Calculates the staking score for a user
+     * @param user Address of the user
+     * @param projectId ID of the project
+     * @return uint256 The user's staking score
+     */
+    function calculateStakingScore(
+        address user,
+        uint256 projectId
+    ) external view returns (uint256);
+
+    /**
      * @dev Returns whether a user can unstake from a project
      * @param user Address of the user
      * @param projectId ID of the project
@@ -141,13 +162,23 @@ interface IStaking {
     ) external view returns (uint256);
 
     /**
+     * @dev Returns the list of stakers for a project
+     * @param projectId ID of the project
+     * @return address[] Array of staker addresses
+     */
+    function getStakers(
+        uint256 projectId
+    ) external view returns (address[] memory);
+
+    /**
      * @dev Emitted when CEL tokens are staked on a project
      */
     event Staked(
         uint256 indexed projectId,
         address indexed user,
         uint256 amount,
-        uint256 totalStaked
+        uint256 totalStaked,
+        uint256 lockPeriod
     );
 
     /**
@@ -166,7 +197,8 @@ interface IStaking {
     event StakingPoolCreated(
         uint256 indexed projectId,
         uint256 stakeLimit,
-        uint256 minStakingPeriod
+        uint256 minStakingPeriod,
+        uint256 maxStakingPeriod
     );
 
     /**
@@ -176,6 +208,7 @@ interface IStaking {
         uint256 indexed projectId,
         uint256 stakeLimit,
         bool enabled,
-        uint256 minStakingPeriod
+        uint256 minStakingPeriod,
+        uint256 maxStakingPeriod
     );
 }
