@@ -19,7 +19,7 @@ describe("CELToken", function () {
       "Celystik Hub Token", // name
       "CEL",               // symbol
       ethers.utils.parseEther("1000000"), // Initial supply: 1 million tokens
-      ethers.utils.parseEther("10000000") // Cap: 10 million tokens
+      
     );
     await celToken.deployed();
   });
@@ -39,9 +39,7 @@ describe("CELToken", function () {
       expect(await celToken.symbol()).to.equal("CEL");
     });
 
-    it("Should set the correct cap", async function () {
-      expect(await celToken.cap()).to.equal(ethers.utils.parseEther("10000000"));
-    });
+    
   });
 
   describe("Transactions", function () {
@@ -113,16 +111,6 @@ describe("CELToken", function () {
       ).to.be.revertedWith("CELToken: caller is not a minter");
     });
     
-    it("Should not allow minting beyond the cap", async function () {
-      const cap = await celToken.cap();
-      const initialSupply = await celToken.totalSupply();
-      const mintAmount = cap.sub(initialSupply).add(1); // One more than allowed
-      
-      // Try to mint beyond the cap
-      await expect(
-        celToken.mint(addr1.address, mintAmount)
-      ).to.be.revertedWith("CELToken: cap exceeded");
-    });
   });
 
   describe("Access Control", function () {
