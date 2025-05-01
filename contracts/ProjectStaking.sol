@@ -559,5 +559,5 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     /**
      * @dev Multiplier factor updated event
      */
-    event MultiplierFactorUpdated(uint256 oldValue, uint256 newValue);
+    
 }
