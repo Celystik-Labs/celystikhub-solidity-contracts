@@ -36,7 +36,9 @@ interface IInnovationUnits is IERC1155 {
      * @dev Returns project data for the specified project ID
      * @param projectId The project ID to query
      */
-    function getProjectData(uint256 projectId)
+    function getProjectData(
+        uint256 projectId
+    )
         external
         view
         returns (
@@ -46,7 +48,6 @@ interface IInnovationUnits is IERC1155 {
             uint256 contributorsReservePercentage,
             uint256 investorsReservePercentage,
             address treasuryAddress
-           
         );
 
     /**
@@ -106,27 +107,33 @@ interface IInnovationUnits is IERC1155 {
         uint256 projectId,
         address seller,
         uint256 amount
-    ) external returns (uint256 baseReturn,uint256 fee);
+    ) external returns (uint256 baseReturn, uint256 fee);
 
     /**
      * @dev Update the treasury address for a project
      * @param projectId The project ID to update
      * @param _treasuryAddress New address for the treasury
      */
-    function setTreasuryAddress(uint256 projectId, address _treasuryAddress) external;
-
+    function setTreasuryAddress(
+        uint256 projectId,
+        address _treasuryAddress
+    ) external;
 
     /**
      * @dev Returns the remaining allocation for contributors
      * @param projectId The project ID to query
      */
-    function remainingContributorAllocation(uint256 projectId) external view returns (uint256);
+    function remainingContributorAllocation(
+        uint256 projectId
+    ) external view returns (uint256);
 
     /**
      * @dev Returns the remaining allocation for investors
      * @param projectId The project ID to query
      */
-    function remainingInvestorAllocation(uint256 projectId) external view returns (uint256);
+    function remainingInvestorAllocation(
+        uint256 projectId
+    ) external view returns (uint256);
 
     /**
      * @dev Returns creator information for a project
@@ -134,7 +141,9 @@ interface IInnovationUnits is IERC1155 {
      * @return _creators Array of creator addresses
      * @return _shares Array of creator shares
      */
-    function getCreatorInfo(uint256 projectId)
+    function getCreatorInfo(
+        uint256 projectId
+    )
         external
         view
         returns (address[] memory _creators, uint256[] memory _shares);
@@ -145,7 +154,9 @@ interface IInnovationUnits is IERC1155 {
      * @return _creators Array of creator addresses
      * @return _soldAmounts Array of IU amounts each creator has sold
      */
-    function getCreatorSoldInfo(uint256 projectId)
+    function getCreatorSoldInfo(
+        uint256 projectId
+    )
         external
         view
         returns (address[] memory _creators, uint256[] memory _soldAmounts);
@@ -189,7 +200,9 @@ interface IInnovationUnits is IERC1155 {
      * @return _contributors Array of addresses that have received contributor IUs
      * @return _amounts Array of IU amounts each contributor has received
      */
-    function getContributorsInfo(uint256 projectId)
+    function getContributorsInfo(
+        uint256 projectId
+    )
         external
         view
         returns (address[] memory _contributors, uint256[] memory _amounts);
@@ -211,7 +224,9 @@ interface IInnovationUnits is IERC1155 {
      * @return _investors Array of addresses that have invested in IUs
      * @return _amounts Array of IU amounts each investor has purchased
      */
-    function getInvestorsInfo(uint256 projectId)
+    function getInvestorsInfo(
+        uint256 projectId
+    )
         external
         view
         returns (address[] memory _investors, uint256[] memory _amounts);
@@ -228,27 +243,66 @@ interface IInnovationUnits is IERC1155 {
     ) external view returns (uint256 amount);
 
     /**
+     * @dev Update the buy fee percentage
+     * @param _buyFeePercentage New buy fee percentage (in basis points: 100 = 1%)
+     */
+    function updateBuyFeePercentage(uint256 _buyFeePercentage) external;
+
+    /**
+     * @dev Update the sell fee percentage
+     * @param _sellFeePercentage New sell fee percentage (in basis points: 100 = 1%)
+     */
+    function updateSellFeePercentage(uint256 _sellFeePercentage) external;
+
+    /**
+     * @dev Emitted when a fee is updated
+     */
+    event FeeUpdated(string feeType, uint256 oldValue, uint256 newValue);
+
+    /**
      * @dev Emitted when a new project is registered
      */
-    event ProjectRegistered(uint256 indexed projectId, address indexed admin, uint256 totalSupply);
+    event ProjectRegistered(
+        uint256 indexed projectId,
+        address indexed admin,
+        uint256 totalSupply
+    );
 
     /**
      * @dev Emitted when IUs are minted
      */
-    event IUMinted(uint256 indexed projectId, address indexed to, uint256 amount);
+    event IUMinted(
+        uint256 indexed projectId,
+        address indexed to,
+        uint256 amount
+    );
 
     /**
      * @dev Emitted when IUs are sold
      */
-    event IUSold(uint256 indexed projectId, address indexed from, uint256 amount, uint256 returnAmount);
+    event IUSold(
+        uint256 indexed projectId,
+        address indexed from,
+        uint256 amount,
+        uint256 returnAmount
+    );
 
     /**
      * @dev Emitted when IUs are bought
      */
-    event IUBought(uint256 indexed projectId, address indexed buyer, uint256 amount, uint256 price);
+    event IUBought(
+        uint256 indexed projectId,
+        address indexed buyer,
+        uint256 amount,
+        uint256 price
+    );
 
     /**
      * @dev Emitted when the price is updated
      */
-    event PriceUpdated(uint256 indexed projectId, uint256 oldPrice, uint256 newPrice);
+    event PriceUpdated(
+        uint256 indexed projectId,
+        uint256 oldPrice,
+        uint256 newPrice
+    );
 }

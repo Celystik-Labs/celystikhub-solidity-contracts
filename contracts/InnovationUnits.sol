@@ -58,8 +58,8 @@ contract InnovationUnits is ERC1155Supply, Ownable {
     mapping(uint256 => uint256) public investorsMinted;
 
     // Fee settings
-    uint256 public constant BUY_FEE_PERCENTAGE = 500; // 5% buy fee (in basis points)
-    uint256 public constant SELL_FEE_PERCENTAGE = 2000; // 20% sell fee (in basis points)
+    uint256 public buyFeePercentage = 500; // 5% buy fee (in basis points)
+    uint256 public sellFeePercentage = 2000; // 20% sell fee (in basis points)
 
     // Project registration event
     event ProjectRegistered(
@@ -89,6 +89,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         uint256 oldPrice,
         uint256 newPrice
     );
+    event FeeUpdated(string feeType, uint256 oldValue, uint256 newValue);
 
     /**
      * @dev Constructor
@@ -283,7 +284,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
 
         // Calculate payment amounts
         basePayment = amount.mul(project.initialPrice);
-        fee = basePayment.mul(BUY_FEE_PERCENTAGE).div(10000);
+        fee = basePayment.mul(buyFeePercentage).div(10000);
 
         // Handle token minting (caller will handle payment collection)
         _mint(investor, projectId, amount, "");
@@ -327,7 +328,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
 
         // Calculate return amounts
         baseReturn = amount.mul(project.initialPrice);
-        fee = baseReturn.mul(SELL_FEE_PERCENTAGE).div(10000);
+        fee = baseReturn.mul(sellFeePercentage).div(10000);
         uint256 returnAmount = baseReturn.sub(fee);
 
         // Update tracking based on seller type
@@ -621,6 +622,32 @@ contract InnovationUnits is ERC1155Supply, Ownable {
      */
     function getTotalProjects() external view returns (uint256) {
         return _projectCounter;
+    }
+
+    /**
+     * @dev Update the buy fee percentage
+     * @param _buyFeePercentage New buy fee percentage (in basis points: 100 = 1%)
+     */
+    function updateBuyFeePercentage(
+        uint256 _buyFeePercentage
+    ) external onlyOwner {
+        require(_buyFeePercentage <= 3000, "Fee too high: max 30%");
+        uint256 oldFee = buyFeePercentage;
+        buyFeePercentage = _buyFeePercentage;
+        emit FeeUpdated("buy", oldFee, _buyFeePercentage);
+    }
+
+    /**
+     * @dev Update the sell fee percentage
+     * @param _sellFeePercentage New sell fee percentage (in basis points: 100 = 1%)
+     */
+    function updateSellFeePercentage(
+        uint256 _sellFeePercentage
+    ) external onlyOwner {
+        require(_sellFeePercentage <= 3000, "Fee too high: max 30%");
+        uint256 oldFee = sellFeePercentage;
+        sellFeePercentage = _sellFeePercentage;
+        emit FeeUpdated("sell", oldFee, _sellFeePercentage);
     }
 
     // Overrides _beforeTokenTransfer from ERC1155Supply
