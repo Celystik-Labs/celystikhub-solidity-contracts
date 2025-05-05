@@ -168,10 +168,42 @@ async function main() {
     
     // Approve and stake
     await (await celTokenWithInvestor.approve(projectStaking.address, stakeAmount)).wait();
-    await (await projectStakingWithInvestor.stake(projectId, stakeAmount, lockDurationDays)).wait();
+    const stakeTx = await projectStakingWithInvestor.stake(projectId, stakeAmount, lockDurationDays);
+    const stakeReceipt = await stakeTx.wait();
     
-    const stake = await projectStaking.projectStakes(projectId, investor.address);
-    console.log(`Staked ${formatAmount(stake.amount)} CEL for ${stake.lockDuration} days with a score of ${formatAmount(stake.score)}`);
+    // Extract stake index from the Staked event
+    const stakedEvent = stakeReceipt.events.find(e => e.event === "Staked");
+    let stakeIndex = 0; // Default value
+    
+    if (stakedEvent && stakedEvent.args && stakedEvent.args.stakeIndex) {
+      stakeIndex = stakedEvent.args.stakeIndex;
+      console.log(`Stake created with index: ${stakeIndex}`);
+    } else {
+      console.log("Could not extract stake index from event, checking active stakes...");
+      // Try to get the stake index from getUserActiveStakes
+      const [indexes, amounts, startTimes, unlockTimes, lockDurations, scores] = 
+        await projectStaking.getUserActiveStakes(projectId, investor.address);
+      
+      if (indexes.length > 0) {
+        stakeIndex = indexes[0]; // Use the first stake index
+        console.log(`Found stake with index: ${stakeIndex}`);
+      } else {
+        console.log("No active stakes found, using default index 0");
+      }
+    }
+    
+    // Get stake details to display
+    const [indexes, amounts, startTimes, unlockTimes, lockDurations, scores] = 
+      await projectStaking.getUserActiveStakes(projectId, investor.address);
+    
+    if (indexes.length > 0) {
+      const stakePosition = indexes.findIndex(idx => idx.eq(stakeIndex));
+      if (stakePosition !== -1) {
+        console.log(`Staked ${formatAmount(amounts[stakePosition])} CEL for ${Math.floor(lockDurations[stakePosition].toNumber() / 86400)} days with a score of ${formatAmount(scores[stakePosition])}`);
+      } else {
+        console.log(`Staked ${formatAmount(stakeAmount)} CEL for ${lockDurationDays} days`);
+      }
+    }
     
     // Step 5: Start a new epoch to enable rewards
     console.log(`\n6. Starting a new epoch to enable rewards...`);
@@ -303,15 +335,29 @@ async function main() {
     await network.provider.send("evm_increaseTime", [86400 * lockDurationDays]); // Lock duration days
     await network.provider.send("evm_mine");
     
-    const celBalanceBeforeUnstake = await celToken.balanceOf(investor.address);
+    // Verify stake is available for unstaking
+    const [canUnstake, remainingLockTime] = await projectStaking.checkUnstakeAvailability(
+      projectId,
+      investor.address,
+      stakeIndex
+    );
     
-    // Unstake
-    await (await projectStakingWithInvestor.unstake(projectId)).wait();
-    
-    const celBalanceAfterUnstake = await celToken.balanceOf(investor.address);
-    const celFromUnstake = celBalanceAfterUnstake.sub(celBalanceBeforeUnstake);
-    
-    console.log(`Unstaked and received ${formatAmount(celFromUnstake)} CEL`);
+    console.log(`Can unstake: ${canUnstake}`);
+    if (!canUnstake) {
+      console.log(`Remaining lock time: ${remainingLockTime.toString()} seconds`);
+      console.log("Skipping unstake since tokens are still locked");
+    } else {
+      const celBalanceBeforeUnstake = await celToken.balanceOf(investor.address);
+      
+      // Unstake with both projectId and stakeIndex
+      console.log(`Unstaking with project ID ${projectId} and stake index ${stakeIndex}...`);
+      await (await projectStakingWithInvestor.unstake(projectId, stakeIndex)).wait();
+      
+      const celBalanceAfterUnstake = await celToken.balanceOf(investor.address);
+      const celFromUnstake = celBalanceAfterUnstake.sub(celBalanceBeforeUnstake);
+      
+      console.log(`Unstaked and received ${formatAmount(celFromUnstake)} CEL`);
+    }
     
     // Summary
     console.log(`\n=== Demo Flow Complete ===`);
