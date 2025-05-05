@@ -5,6 +5,9 @@ import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IInnovationUnits.sol";
 
 /**
@@ -17,11 +20,21 @@ import "./interfaces/IInnovationUnits.sol";
  * but doesn't explicitly inherit from it to avoid duplicate event definitions.
  * All functionality remains the same.
  */
-contract InnovationUnits is ERC1155Supply, Ownable {
+contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
 
     // Project counter for generating unique IDs
     uint256 private _projectCounter = 0;
+
+    // CEL token reference
+    IERC20 public celToken;
+
+    // Protocol treasury address
+    address public protocolTreasuryAddress;
+
+    // Project treasury balances tracking
+    mapping(uint256 => uint256) public projectTreasuryBalances;
 
     // Project struct to store all project-specific data
     struct ProjectData {
@@ -31,7 +44,6 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         uint256 creatorsAllocatedPercentage;
         uint256 contributorsReservePercentage;
         uint256 investorsReservePercentage;
-        address treasuryAddress;
         bool exists;
     }
 
@@ -91,11 +103,71 @@ contract InnovationUnits is ERC1155Supply, Ownable {
     );
     event FeeUpdated(string feeType, uint256 oldValue, uint256 newValue);
 
+    // Treasury-related events
+    event ProjectTreasuryUpdated(
+        uint256 indexed projectId,
+        uint256 previousBalance,
+        uint256 newBalance
+    );
+    event LiquidityAdded(
+        uint256 indexed projectId,
+        address indexed provider,
+        uint256 amount
+    );
+    event LiquidityRemoved(
+        uint256 indexed projectId,
+        address indexed recipient,
+        uint256 amount
+    );
+    event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
+
     /**
      * @dev Constructor
      * @param _uri Base URI for token metadata
+     * @param _celToken Address of the CEL token (optional, can be set later via initialize)
+     * @param _protocolTreasury Address of the protocol treasury (optional, can be set later via initialize)
      */
-    constructor(string memory _uri) ERC1155(_uri) {}
+    constructor(
+        string memory _uri,
+        address _celToken,
+        address _protocolTreasury
+    ) ERC1155(_uri) {
+        // Allow empty addresses for backward compatibility with existing deployments
+        if (_celToken != address(0)) {
+            celToken = IERC20(_celToken);
+        }
+
+        if (_protocolTreasury != address(0)) {
+            protocolTreasuryAddress = _protocolTreasury;
+        }
+    }
+
+    /**
+     * @dev Initialize the contract with CEL token and protocol treasury addresses
+     * This function can be called if these weren't set in the constructor
+     * @param _celToken CEL token address
+     * @param _protocolTreasury Protocol treasury address
+     */
+    function initialize(
+        address _celToken,
+        address _protocolTreasury
+    ) external onlyOwner {
+        require(_celToken != address(0), "Invalid CEL token address");
+        require(
+            _protocolTreasury != address(0),
+            "Invalid protocol treasury address"
+        );
+
+        // Only allow setting these once
+        require(address(celToken) == address(0), "CEL token already set");
+        require(
+            protocolTreasuryAddress == address(0),
+            "Protocol treasury already set"
+        );
+
+        celToken = IERC20(_celToken);
+        protocolTreasuryAddress = _protocolTreasury;
+    }
 
     /**
      * @dev Modifier to check if the project exists
@@ -106,7 +178,20 @@ contract InnovationUnits is ERC1155Supply, Ownable {
     }
 
     /**
+     * @dev Modifier to check if the caller is a creator of the project
+     */
+    modifier onlyProjectCreator(uint256 projectId) {
+        require(projects[projectId].exists, "Project does not exist");
+        require(
+            creatorShares[projectId][msg.sender] > 0,
+            "Not a project creator"
+        );
+        _;
+    }
+
+    /**
      * @dev Creates a new project and assigns a unique token ID for its IUs
+     * Also automatically mints tokens to creators based on their shares
      * @param _totalSupply Total supply of Innovation Units for this project
      * @param _initialPrice Initial price per IU in wei
      * @param _creators Array of creator addresses
@@ -114,7 +199,6 @@ contract InnovationUnits is ERC1155Supply, Ownable {
      * @param _creatorsAllocatedPercentage Percentage allocated to creators (in basis points)
      * @param _contributorsReservePercentage Percentage allocated to contributors (in basis points)
      * @param _investorsReservePercentage Percentage allocated to investors (in basis points)
-     * @param _treasuryAddress Address where fees will be sent
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
@@ -124,26 +208,19 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         uint256[] memory _creatorShares,
         uint256 _creatorsAllocatedPercentage,
         uint256 _contributorsReservePercentage,
-        uint256 _investorsReservePercentage,
-        address _treasuryAddress,
-        address _projectAdmin
-    ) external onlyOwner returns (uint256 projectId) {
+        uint256 _investorsReservePercentage
+    ) external nonReentrant returns (uint256 projectId) {
         require(
             _creators.length == _creatorShares.length,
             "Creator arrays length mismatch"
         );
         require(_creators.length > 0, "At least one creator required");
-        require(_treasuryAddress != address(0), "Invalid treasury address");
-        require(_projectAdmin != address(0), "Invalid project admin address");
 
         uint256 totalCreatorShares = 0;
         for (uint256 i = 0; i < _creatorShares.length; i++) {
             totalCreatorShares = totalCreatorShares.add(_creatorShares[i]);
         }
-        require(
-            totalCreatorShares == 10000,
-            "Creator shares must add up to 100%"
-        );
+        
 
         uint256 totalPercentage = _contributorsReservePercentage.add(
             (_investorsReservePercentage.add(_creatorsAllocatedPercentage))
@@ -162,9 +239,11 @@ contract InnovationUnits is ERC1155Supply, Ownable {
             creatorsAllocatedPercentage: _creatorsAllocatedPercentage,
             contributorsReservePercentage: _contributorsReservePercentage,
             investorsReservePercentage: _investorsReservePercentage,
-            treasuryAddress: _treasuryAddress,
             exists: true
         });
+
+        // Initialize project treasury balance
+        projectTreasuryBalances[projectId] = 0;
 
         // Store creator information
         projectCreators[projectId] = _creators;
@@ -172,17 +251,19 @@ contract InnovationUnits is ERC1155Supply, Ownable {
             creatorShares[projectId][_creators[i]] = _creatorShares[i];
         }
 
-        emit ProjectRegistered(projectId, _projectAdmin, _totalSupply);
+        emit ProjectRegistered(projectId, msg.sender, _totalSupply);
+
+        // Automatically mint tokens to creators
+        _mintToCreators(projectId);
+
         return projectId;
     }
 
     /**
-     * @dev Mints IUs to creators based on their specified shares
+     * @dev Internal function to mint IUs to creators based on their specified shares
      * @param projectId The project ID (token ID) of the IUs
      */
-    function mintToCreators(
-        uint256 projectId
-    ) external projectExists(projectId) {
+    function _mintToCreators(uint256 projectId) internal {
         require(creatorsMinted[projectId] == 0, "Creators already minted");
 
         ProjectData storage project = projects[projectId];
@@ -210,7 +291,18 @@ contract InnovationUnits is ERC1155Supply, Ownable {
     }
 
     /**
-     * @dev Mints IUs to a contributor
+     * @dev Legacy function for backward compatibility, now all minting happens in createProject
+     * @param projectId The project ID (token ID) of the IUs
+     */
+    function mintToCreators(
+        uint256 projectId
+    ) external projectExists(projectId) onlyOwner {
+        require(creatorsMinted[projectId] == 0, "Creators already minted");
+        _mintToCreators(projectId);
+    }
+
+    /**
+     * @dev Mints IUs to a contributor - can only be called by project creators
      * @param projectId The project ID (token ID) of the IUs
      * @param contributor Address of the contributor
      * @param amount Amount of IUs to mint
@@ -219,7 +311,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         uint256 projectId,
         address contributor,
         uint256 amount
-    ) external projectExists(projectId) onlyOwner {
+    ) external projectExists(projectId) onlyProjectCreator(projectId) {
         require(contributor != address(0), "Invalid contributor address");
         require(amount > 0, "Amount must be greater than 0");
 
@@ -251,24 +343,21 @@ contract InnovationUnits is ERC1155Supply, Ownable {
     }
 
     /**
-     * @dev Buy IUs as an investor
+     * @dev Buy IUs directly with CEL tokens
      * @param projectId The project ID (token ID) of the IUs
-     * @param investor Address of the investor
      * @param amount Amount of IUs to buy
-     * @return basePayment The base amount required for the purchase (goes to project treasury)
-     * @return fee The fee amount (goes to platform treasury)
+     * @return totalCost Total cost paid in CEL tokens
+     * @return feePaid Fee amount paid to protocol treasury
      */
-    function mintIUsForTokens(
+    function buyIUs(
         uint256 projectId,
-        address investor,
         uint256 amount
     )
         external
         projectExists(projectId)
-        onlyOwner
-        returns (uint256 basePayment, uint256 fee)
+        nonReentrant
+        returns (uint256 totalCost, uint256 feePaid)
     {
-        require(investor != address(0), "Invalid investor address");
         require(amount > 0, "Amount must be greater than 0");
 
         ProjectData storage project = projects[projectId];
@@ -283,94 +372,203 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         );
 
         // Calculate payment amounts
-        basePayment = amount.mul(project.initialPrice);
-        fee = basePayment.mul(buyFeePercentage).div(10000);
+        uint256 basePayment = amount.mul(project.initialPrice);
+        uint256 fee = basePayment.mul(buyFeePercentage).div(10000);
+        totalCost = basePayment.add(fee);
 
-        // Handle token minting (caller will handle payment collection)
-        _mint(investor, projectId, amount, "");
+        // Transfer CEL tokens from buyer to this contract
+        celToken.safeTransferFrom(msg.sender, address(this), totalCost);
+
+        // Send fee to protocol treasury
+        celToken.safeTransfer(protocolTreasuryAddress, fee);
+
+        // Update project treasury balance
+        uint256 previousBalance = projectTreasuryBalances[projectId];
+        projectTreasuryBalances[projectId] = previousBalance.add(basePayment);
+
+        emit ProjectTreasuryUpdated(
+            projectId,
+            previousBalance,
+            projectTreasuryBalances[projectId]
+        );
+
+        // Handle token minting
+        _mint(msg.sender, projectId, amount, "");
         investorsMinted[projectId] = investorsMinted[projectId].add(amount);
 
         // Track investor information
-        if (investorAmounts[projectId][investor] == 0) {
-            projectInvestors[projectId].push(investor);
+        if (investorAmounts[projectId][msg.sender] == 0) {
+            projectInvestors[projectId].push(msg.sender);
         }
-        investorAmounts[projectId][investor] = investorAmounts[projectId][
-            investor
+        investorAmounts[projectId][msg.sender] = investorAmounts[projectId][
+            msg.sender
         ].add(amount);
 
-        emit IUBought(projectId, investor, amount, project.initialPrice);
-        return (basePayment, fee);
+        emit IUBought(projectId, msg.sender, amount, project.initialPrice);
+
+        return (totalCost, fee);
     }
 
     /**
-     * @dev Sell IUs for Tokens
+     * @dev Sell IUs for CEL tokens
      * @param projectId The project ID (token ID) of the IUs
-     * @param seller Address of the seller
      * @param amount Amount of IUs to sell
-     * @return baseReturn The base amount to return to seller (before fee deduction)
-     * @return fee The fee amount (goes to platform treasury)
+     * @return amountReceived Amount received in CEL tokens
+     * @return feePaid Fee amount paid to protocol treasury
      */
-    function burnIUsForTokens(
+    function sellIUs(
         uint256 projectId,
-        address seller,
         uint256 amount
     )
         external
         projectExists(projectId)
-        onlyOwner
-        returns (uint256 baseReturn, uint256 fee)
+        nonReentrant
+        returns (uint256 amountReceived, uint256 feePaid)
     {
-        require(seller != address(0), "Invalid seller address");
         require(amount > 0, "Amount must be greater than 0");
-        require(balanceOf(seller, projectId) >= amount, "Insufficient balance");
+        require(
+            balanceOf(msg.sender, projectId) >= amount,
+            "Insufficient balance"
+        );
 
         ProjectData storage project = projects[projectId];
 
         // Calculate return amounts
-        baseReturn = amount.mul(project.initialPrice);
-        fee = baseReturn.mul(sellFeePercentage).div(10000);
-        uint256 returnAmount = baseReturn.sub(fee);
+        uint256 baseReturn = amount.mul(project.initialPrice);
+        uint256 fee = baseReturn.mul(sellFeePercentage).div(10000);
+        uint256 netReturn = baseReturn.sub(fee);
+        amountReceived = netReturn;
+        feePaid = fee;
+
+        // Ensure project treasury has enough balance
+        require(
+            projectTreasuryBalances[projectId] >= baseReturn,
+            "Insufficient project treasury balance"
+        );
 
         // Update tracking based on seller type
-        if (investorAmounts[projectId][seller] > 0) {
+        if (investorAmounts[projectId][msg.sender] > 0) {
             // If the seller is an investor, update their tracking
-            investorAmounts[projectId][seller] = investorAmounts[projectId][
-                seller
+            investorAmounts[projectId][msg.sender] = investorAmounts[projectId][
+                msg.sender
             ] > amount
-                ? investorAmounts[projectId][seller].sub(amount)
+                ? investorAmounts[projectId][msg.sender].sub(amount)
                 : 0;
-        } else if (contributorAmounts[projectId][seller] > 0) {
+        } else if (contributorAmounts[projectId][msg.sender] > 0) {
             // If the seller is a contributor, update their tracking
-            contributorAmounts[projectId][seller] = contributorAmounts[
+            contributorAmounts[projectId][msg.sender] = contributorAmounts[
                 projectId
-            ][seller] > amount
-                ? contributorAmounts[projectId][seller].sub(amount)
+            ][msg.sender] > amount
+                ? contributorAmounts[projectId][msg.sender].sub(amount)
                 : 0;
-        } else if (creatorShares[projectId][seller] > 0) {
+        } else if (creatorShares[projectId][msg.sender] > 0) {
             // If the seller is a creator, track how many IUs they've sold
-            creatorSoldAmounts[projectId][seller] = creatorSoldAmounts[
+            creatorSoldAmounts[projectId][msg.sender] = creatorSoldAmounts[
                 projectId
-            ][seller].add(amount);
+            ][msg.sender].add(amount);
         }
 
-        // Burn the tokens (caller will handle payment)
-        _burn(seller, projectId, amount);
+        // Update project treasury balance
+        uint256 previousBalance = projectTreasuryBalances[projectId];
+        projectTreasuryBalances[projectId] = previousBalance.sub(baseReturn);
 
-        emit IUSold(projectId, seller, amount, returnAmount);
-        return (baseReturn, fee);
+        emit ProjectTreasuryUpdated(
+            projectId,
+            previousBalance,
+            projectTreasuryBalances[projectId]
+        );
+
+        // Send fee to protocol treasury
+        celToken.safeTransfer(protocolTreasuryAddress, fee);
+
+        // Send net return to seller
+        celToken.safeTransfer(msg.sender, netReturn);
+
+        // Burn the tokens
+        _burn(msg.sender, projectId, amount);
+
+        emit IUSold(projectId, msg.sender, amount, netReturn);
+
+        return (amountReceived, feePaid);
     }
 
     /**
-     * @dev Update the treasury address for a project
-     * @param projectId The project ID to update
-     * @param _treasuryAddress New address for the treasury
+     * @dev Add liquidity to a project treasury
+     * @param projectId The project ID (token ID) of the IUs
+     * @param amount Amount of CEL tokens to add
      */
-    function setTreasuryAddress(
+    function addLiquidity(
         uint256 projectId,
-        address _treasuryAddress
-    ) external projectExists(projectId) onlyOwner {
-        require(_treasuryAddress != address(0), "Invalid treasury address");
-        projects[projectId].treasuryAddress = _treasuryAddress;
+        uint256 amount
+    ) external projectExists(projectId) nonReentrant {
+        require(amount > 0, "Amount must be greater than 0");
+
+        // Transfer CEL tokens from provider to this contract
+        celToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        // Update project treasury balance
+        uint256 previousBalance = projectTreasuryBalances[projectId];
+        projectTreasuryBalances[projectId] = previousBalance.add(amount);
+
+        emit ProjectTreasuryUpdated(
+            projectId,
+            previousBalance,
+            projectTreasuryBalances[projectId]
+        );
+
+        emit LiquidityAdded(projectId, msg.sender, amount);
+    }
+
+    /**
+     * @dev Remove liquidity from a project treasury (owner only)
+     * @param projectId The project ID
+     * @param amount Amount of CEL tokens to remove
+     * @param recipient Recipient address
+     */
+    function removeLiquidity(
+        uint256 projectId,
+        uint256 amount,
+        address recipient
+    ) external projectExists(projectId) onlyOwner nonReentrant {
+        require(amount > 0, "Amount must be greater than 0");
+        require(recipient != address(0), "Invalid recipient address");
+        require(
+            projectTreasuryBalances[projectId] >= amount,
+            "Insufficient project treasury balance"
+        );
+
+        // Update project treasury balance
+        uint256 previousBalance = projectTreasuryBalances[projectId];
+        projectTreasuryBalances[projectId] = previousBalance.sub(amount);
+
+        // Transfer CEL tokens to recipient
+        celToken.safeTransfer(recipient, amount);
+
+        emit ProjectTreasuryUpdated(
+            projectId,
+            previousBalance,
+            projectTreasuryBalances[projectId]
+        );
+
+        emit LiquidityRemoved(projectId, recipient, amount);
+    }
+
+    /**
+     * @dev Update the protocol treasury address
+     * @param _protocolTreasuryAddress New address for the protocol treasury
+     */
+    function setProtocolTreasuryAddress(
+        address _protocolTreasuryAddress
+    ) external onlyOwner {
+        require(
+            _protocolTreasuryAddress != address(0),
+            "Invalid treasury address"
+        );
+
+        address oldTreasury = protocolTreasuryAddress;
+        protocolTreasuryAddress = _protocolTreasuryAddress;
+
+        emit ProtocolTreasuryUpdated(oldTreasury, _protocolTreasuryAddress);
     }
 
     /**
@@ -389,7 +587,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
             uint256 creatorsAllocatedPercentage,
             uint256 contributorsReservePercentage,
             uint256 investorsReservePercentage,
-            address treasuryAddress
+            uint256 treasuryBalance
         )
     {
         ProjectData storage project = projects[projectId];
@@ -399,7 +597,7 @@ contract InnovationUnits is ERC1155Supply, Ownable {
             project.creatorsAllocatedPercentage,
             project.contributorsReservePercentage,
             project.investorsReservePercentage,
-            project.treasuryAddress
+            projectTreasuryBalances[projectId]
         );
     }
 
@@ -648,6 +846,80 @@ contract InnovationUnits is ERC1155Supply, Ownable {
         uint256 oldFee = sellFeePercentage;
         sellFeePercentage = _sellFeePercentage;
         emit FeeUpdated("sell", oldFee, _sellFeePercentage);
+    }
+
+    /**
+     * @dev Check if the contract is ready for direct use without Factory
+     * @return isReady Whether the contract is fully initialized
+     * @return missingComponent What component is missing, if any ("" means all good)
+     */
+    function isReadyForDirectUse()
+        external
+        view
+        returns (bool isReady, string memory missingComponent)
+    {
+        if (address(celToken) == address(0)) {
+            return (false, "CEL token not set");
+        }
+
+        if (protocolTreasuryAddress == address(0)) {
+            return (false, "Protocol treasury not set");
+        }
+
+        return (true, "");
+    }
+
+    /**
+     * @dev Rescue CEL tokens accidentally sent to the contract without going through proper functions
+     * Will NOT allow removing tokens from project treasuries
+     * @param amount Amount to rescue
+     * @param recipient Address to send the tokens to
+     */
+    function rescueCEL(
+        uint256 amount,
+        address recipient
+    ) external onlyOwner nonReentrant {
+        require(recipient != address(0), "Invalid recipient");
+
+        // Calculate total treasury balance across all projects
+        uint256 totalProjectTreasuries = 0;
+        for (uint256 i = 0; i < _projectCounter; i++) {
+            if (projects[i].exists) {
+                totalProjectTreasuries = totalProjectTreasuries.add(
+                    projectTreasuryBalances[i]
+                );
+            }
+        }
+
+        // Calculate excess CEL that can be rescued
+        uint256 contractBalance = celToken.balanceOf(address(this));
+        require(
+            contractBalance > totalProjectTreasuries,
+            "No excess CEL to rescue"
+        );
+
+        uint256 rescuableAmount = contractBalance.sub(totalProjectTreasuries);
+        require(amount <= rescuableAmount, "Cannot rescue treasury CEL");
+
+        // Transfer the tokens
+        celToken.safeTransfer(recipient, amount);
+    }
+
+    /**
+     * @dev Emergency function to withdraw any other token than CEL
+     * @param token Address of the token to withdraw
+     * @param amount Amount to withdraw
+     * @param recipient Address to send the tokens to
+     */
+    function rescueToken(
+        address token,
+        uint256 amount,
+        address recipient
+    ) external onlyOwner nonReentrant {
+        require(token != address(celToken), "Use rescueCEL for CEL tokens");
+        require(recipient != address(0), "Invalid recipient");
+
+        IERC20(token).safeTransfer(recipient, amount);
     }
 
     // Overrides _beforeTokenTransfer from ERC1155Supply

@@ -265,4 +265,9 @@ interface IEmissionController {
      * @dev Emitted when emission shares are updated
      */
     event EmissionSharesUpdated(uint256 stakingShare, uint256 iuHoldersShare);
+
+    /**
+     * @dev Emitted when tokens are minted for an epoch's emissions
+     */
+    event EpochTokensMinted(uint256 indexed epochNumber, uint256 amount);
 }

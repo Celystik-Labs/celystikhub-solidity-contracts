@@ -5,7 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title ICELToken
- * @dev Interface for the Celystik Hub Token (CEL) that extends ERC20 functionality
+ * @dev Interface for the CEL token with additional minting functionality
+ * This extends the standard ERC20 interface to include minting capabilities
  */
 interface ICELToken is IERC20 {
     /**
@@ -24,16 +25,12 @@ interface ICELToken is IERC20 {
     function decimals() external view returns (uint8);
 
     /**
-     * @dev Creates `amount` tokens and assigns them to `account`, increasing
-     * the total supply.
-     *
-     * Emits a {Transfer} event with `from` set to the zero address.
-     *
-     * Requirements:
-     * - `account` cannot be the zero address.
-     * - only the owner or authorized minters can call this function
+     * @dev Mints new tokens to the specified address
+     * @param to The address that will receive the minted tokens
+     * @param amount The amount of tokens to mint
+     
      */
-    function mint(address account, uint256 amount) external;
+    function mint(address to, uint256 amount) external returns(bool);
 
     /**
      * @dev Destroys `amount` tokens from `account`, reducing the
@@ -76,7 +73,11 @@ interface ICELToken is IERC20 {
      */
     function isBurner(address account) external view returns (bool);
 
-
+    /**
+     * @dev Returns the address that has the minter role
+     * @return The address of the minter
+     */
+    function minter() external view returns (address);
 
     /**
      * @dev Pauses all token transfers

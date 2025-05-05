@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 interface IInnovationUnits is IERC1155 {
     /**
      * @dev Creates a new project and assigns a unique token ID for its IUs
+     * Automatically mints tokens to creators based on their shares
      * @param _totalSupply Total supply of Innovation Units for this project
      * @param _initialPrice Initial price per IU in wei
      * @param _creators Array of creator addresses
@@ -18,7 +19,6 @@ interface IInnovationUnits is IERC1155 {
      * @param _creatorsAllocatedPercentage Percentage allocated to creators (in basis points)
      * @param _contributorsReservePercentage Percentage allocated to contributors (in basis points)
      * @param _investorsReservePercentage Percentage allocated to investors (in basis points)
-     * @param _treasuryAddress Address where fees will be sent
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
@@ -28,8 +28,7 @@ interface IInnovationUnits is IERC1155 {
         uint256[] memory _creatorShares,
         uint256 _creatorsAllocatedPercentage,
         uint256 _contributorsReservePercentage,
-        uint256 _investorsReservePercentage,
-        address _treasuryAddress
+        uint256 _investorsReservePercentage
     ) external returns (uint256 projectId);
 
     /**
@@ -47,7 +46,7 @@ interface IInnovationUnits is IERC1155 {
             uint256 creatorsAllocatedPercentage,
             uint256 contributorsReservePercentage,
             uint256 investorsReservePercentage,
-            address treasuryAddress
+            uint256 treasuryBalance
         );
 
     /**
@@ -64,13 +63,22 @@ interface IInnovationUnits is IERC1155 {
     function getTotalProjects() external view returns (uint256);
 
     /**
-     * @dev Mints IUs to creators based on their specified shares
+     * @dev Initialize the contract with CEL token and protocol treasury addresses
+     * This function can be called if these weren't set in the constructor
+     * @param _celToken CEL token address
+     * @param _protocolTreasury Protocol treasury address
+     */
+    function initialize(address _celToken, address _protocolTreasury) external;
+
+    /**
+     * @dev Legacy function for backward compatibility -
+     * In new implementations, creators are minted tokens during project creation
      * @param projectId The project ID (token ID) of the IUs
      */
     function mintToCreators(uint256 projectId) external;
 
     /**
-     * @dev Mints IUs to a contributor
+     * @dev Mints IUs to a contributor - can only be called by project creators
      * @param projectId The project ID (token ID) of the IUs
      * @param contributor Address of the contributor
      * @param amount Amount of IUs to mint
@@ -82,42 +90,86 @@ interface IInnovationUnits is IERC1155 {
     ) external;
 
     /**
-     * @dev Buy IUs as an investor
+     * @dev Buy IUs directly with CEL tokens
      * @param projectId The project ID (token ID) of the IUs
-     * @param investor Address of the investor
-     * * @param amount Amount of IUs to buy
-     * @return basePayment The base amount required for the purchase (goes to project treasury)
-     * @return fee The fee amount (goes to platform treasury)
+     * @param amount Amount of IUs to buy
+     * @return totalCost Total cost paid in CEL tokens
+     * @return feePaid Fee amount paid to protocol treasury
      */
-    function mintIUsForTokens(
+    function buyIUs(
         uint256 projectId,
-        address investor,
         uint256 amount
-    ) external returns (uint256 basePayment, uint256 fee);
+    ) external returns (uint256 totalCost, uint256 feePaid);
 
     /**
-     * @dev Sell IUs
+     * @dev Sell IUs for CEL tokens
      * @param projectId The project ID (token ID) of the IUs
-     * @param seller Address of the seller
      * @param amount Amount of IUs to sell
-     * @return baseReturn The base amount to return to seller (before fee deduction)
-     * @return fee The fee amount (goes to platform treasury)
+     * @return amountReceived Amount received in CEL tokens
+     * @return feePaid Fee amount paid to protocol treasury
      */
-    function burnIUsForTokens(
+    function sellIUs(
         uint256 projectId,
-        address seller,
         uint256 amount
-    ) external returns (uint256 baseReturn, uint256 fee);
+    ) external returns (uint256 amountReceived, uint256 feePaid);
 
     /**
-     * @dev Update the treasury address for a project
-     * @param projectId The project ID to update
-     * @param _treasuryAddress New address for the treasury
+     * @dev Add liquidity to a project treasury
+     * @param projectId The project ID
+     * @param amount Amount of CEL tokens to add
      */
-    function setTreasuryAddress(
+    function addLiquidity(uint256 projectId, uint256 amount) external;
+
+    /**
+     * @dev Remove liquidity from a project treasury (owner only)
+     * @param projectId The project ID
+     * @param amount Amount of CEL tokens to remove
+     * @param recipient Recipient address
+     */
+    function removeLiquidity(
         uint256 projectId,
-        address _treasuryAddress
+        uint256 amount,
+        address recipient
     ) external;
+
+    /**
+     * @dev Get the treasury balance for a specific project
+     * @param projectId The project ID to query
+     * @return balance The treasury balance in CEL tokens
+     */
+    function projectTreasuryBalances(
+        uint256 projectId
+    ) external view returns (uint256 balance);
+
+    /**
+     * @dev Check if the contract is ready for direct use without Factory
+     * @return isReady Whether the contract is fully initialized
+     * @return missingComponent What component is missing, if any ("" means all good)
+     */
+    function isReadyForDirectUse()
+        external
+        view
+        returns (bool isReady, string memory missingComponent);
+
+    /**
+     * @dev Update the protocol treasury address
+     * @param _protocolTreasuryAddress New address for the protocol treasury
+     */
+    function setProtocolTreasuryAddress(
+        address _protocolTreasuryAddress
+    ) external;
+
+    /**
+     * @dev Update the buy fee percentage
+     * @param _buyFeePercentage New buy fee percentage (in basis points: 100 = 1%)
+     */
+    function updateBuyFeePercentage(uint256 _buyFeePercentage) external;
+
+    /**
+     * @dev Update the sell fee percentage
+     * @param _sellFeePercentage New sell fee percentage (in basis points: 100 = 1%)
+     */
+    function updateSellFeePercentage(uint256 _sellFeePercentage) external;
 
     /**
      * @dev Returns the remaining allocation for contributors
@@ -243,18 +295,6 @@ interface IInnovationUnits is IERC1155 {
     ) external view returns (uint256 amount);
 
     /**
-     * @dev Update the buy fee percentage
-     * @param _buyFeePercentage New buy fee percentage (in basis points: 100 = 1%)
-     */
-    function updateBuyFeePercentage(uint256 _buyFeePercentage) external;
-
-    /**
-     * @dev Update the sell fee percentage
-     * @param _sellFeePercentage New sell fee percentage (in basis points: 100 = 1%)
-     */
-    function updateSellFeePercentage(uint256 _sellFeePercentage) external;
-
-    /**
      * @dev Emitted when a fee is updated
      */
     event FeeUpdated(string feeType, uint256 oldValue, uint256 newValue);
@@ -305,4 +345,36 @@ interface IInnovationUnits is IERC1155 {
         uint256 oldPrice,
         uint256 newPrice
     );
+
+    /**
+     * @dev Emitted when a project treasury balance is updated
+     */
+    event ProjectTreasuryUpdated(
+        uint256 indexed projectId,
+        uint256 previousBalance,
+        uint256 newBalance
+    );
+
+    /**
+     * @dev Emitted when liquidity is added to a project treasury
+     */
+    event LiquidityAdded(
+        uint256 indexed projectId,
+        address indexed provider,
+        uint256 amount
+    );
+
+    /**
+     * @dev Emitted when liquidity is removed from a project treasury
+     */
+    event LiquidityRemoved(
+        uint256 indexed projectId,
+        address indexed recipient,
+        uint256 amount
+    );
+
+    /**
+     * @dev Emitted when the protocol treasury address is updated
+     */
+    event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
 }

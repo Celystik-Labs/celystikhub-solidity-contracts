@@ -1,10 +1,22 @@
-require("@nomicfoundation/hardhat-toolbox");
-require('dotenv').config();
+require("@nomiclabs/hardhat-waffle");
+require("@nomiclabs/hardhat-ethers");
+require("@nomiclabs/hardhat-etherscan");
+require("dotenv").config();
 
-/** @type import('hardhat/config').HardhatUserConfig */
+// Load environment variables from .env file
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
+const INFURA_API_KEY = process.env.INFURA_API_KEY || "";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
+const POLYGONSCAN_API_KEY = process.env.POLYGONSCAN_API_KEY || "";
+const OPTIMISM_API_KEY = process.env.OPTIMISM_API_KEY || "";
+const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";
+
+/**
+ * @type import('hardhat/config').HardhatUserConfig
+ */
 module.exports = {
   solidity: {
-    version: "0.8.17",
+    version: "0.8.4",
     settings: {
       optimizer: {
         enabled: true,
@@ -13,31 +25,81 @@ module.exports = {
     }
   },
   networks: {
+    // Local development networks
     hardhat: {
-      chainId: 1337
+      chainId: 31337
     },
     localhost: {
-      url: "http://127.0.0.1:8545"
+      url: "http://127.0.0.1:8545",
+      chainId: 31337
     },
-
-    optimismMainnet: {
-      url: process.env.OPTIMISM_MAINNET_URL,
-      accounts: [process.env.PRIVATE_KEY],
+    
+    // Ethereum networks
+    mainnet: {
+      url: `https://mainnet.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      gasPrice: 30000000000, // 30 gwei (adjust based on current gas prices)
+      chainId: 1
     },
-    optimismSepolia: {
-      url: process.env.OPTIMISM_SEPOLIA_URL,
-      accounts: [process.env.PRIVATE_KEY],
+    goerli: {
+      url: `https://goerli.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      chainId: 5
     },
-    // Add configuration for testnet and mainnet when ready for deployment
-    // goerli: {
-    //   url: `https://goerli.infura.io/v3/${process.env.INFURA_API_KEY}`,
-    //   accounts: [process.env.PRIVATE_KEY]
-    // }
+    sepolia: {
+      url: `https://sepolia.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      chainId: 11155111
+    },
+    
+    // Layer 2 and sidechains
+    polygon: {
+      url: `https://polygon-mainnet.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      gasPrice: 100000000000, // 100 gwei (adjust based on current gas prices)
+      chainId: 137
+    },
+    polygonMumbai: {
+      url: `https://polygon-mumbai.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      chainId: 80001
+    },
+    optimism: {
+      url: `https://optimism-mainnet.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      chainId: 10
+    },
+    arbitrum: {
+      url: `https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
+      chainId: 42161
+    }
+  },
+  etherscan: {
+    apiKey: {
+      // Ethereum
+      mainnet: ETHERSCAN_API_KEY,
+      goerli: ETHERSCAN_API_KEY,
+      sepolia: ETHERSCAN_API_KEY,
+      
+      // Polygon
+      polygon: POLYGONSCAN_API_KEY,
+      polygonMumbai: POLYGONSCAN_API_KEY,
+      
+      // Optimism
+      optimisticEthereum: OPTIMISM_API_KEY,
+      
+      // Arbitrum
+      arbitrumOne: ARBISCAN_API_KEY,
+    }
   },
   paths: {
     sources: "./contracts",
     tests: "./test",
     cache: "./cache",
     artifacts: "./artifacts"
+  },
+  mocha: {
+    timeout: 60000
   }
 }; 

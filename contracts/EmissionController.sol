@@ -9,11 +9,13 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./interfaces/IProjectStaking.sol";
 import "./interfaces/IInnovationUnits.sol";
 import "./interfaces/IEmissionController.sol";
+import "./interfaces/ICELToken.sol";
 
 /**
  * @title EmissionController
  * @dev Manages the distribution of CEL token emissions to projects, stakers, and IU holders
  * Emissions are calculated based on impact scores and distributed at the end of each epoch
+ * Uses a hybrid approach: mints tokens at epoch processing time and transfers when users claim
  */
 contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     using SafeMath for uint256;
@@ -42,7 +44,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     bool public epochActive = false;
 
     // Contract references
-    IERC20 public celToken;
+    ICELToken public celToken;
     IProjectStaking public stakingContract;
     IInnovationUnits public innovationUnits;
 
@@ -85,9 +87,15 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
             "Invalid innovation units contract"
         );
 
-        celToken = IERC20(_celToken);
+        celToken = ICELToken(_celToken);
         stakingContract = IProjectStaking(_stakingContract);
         innovationUnits = IInnovationUnits(_innovationUnits);
+
+        // Verify this contract has minter permissions
+        require(
+            celToken.isMinter(address(this)),
+            "EmissionController must have minter role"
+        );
     }
 
     /**
@@ -107,6 +115,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     /**
      * @dev Process the end of an epoch and calculate emissions
      * Takes a snapshot of all impact scores and calculates emissions
+     * Mints the required tokens for the epoch to this contract
      */
     function processEpoch() external override onlyOwner nonReentrant {
         require(epochActive, "No active epoch");
@@ -179,11 +188,15 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
             }
         }
 
-        // Ensure we have enough CEL tokens for emissions
-        require(
-            celToken.balanceOf(address(this)) >= totalAllocatedEmissions,
-            "Insufficient CEL tokens for emissions"
-        );
+        // Mint the required tokens for this epoch - Hybrid approach
+        if (totalAllocatedEmissions > 0) {
+            bool success = celToken.mint(
+                address(this),
+                totalAllocatedEmissions
+            );
+            require(success, "Failed to mint CEL tokens for epoch emissions");
+            emit EpochTokensMinted(currentEpoch, totalAllocatedEmissions);
+        }
 
         emit EpochProcessed(currentEpoch, totalAllocatedEmissions);
     }
@@ -327,7 +340,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
         // Transfer emissions to user
         if (userEmissions > 0) {
-            celToken.safeTransfer(msg.sender, userEmissions);
+            // Using SafeERC20 wrapper for the transfer
+            IERC20(address(celToken)).safeTransfer(msg.sender, userEmissions);
             emit StakingEmissionsClaimed(
                 epochNumber,
                 projectId,
@@ -395,7 +409,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
         // Transfer emissions to user
         if (userEmissions > 0) {
-            celToken.safeTransfer(msg.sender, userEmissions);
+            // Using SafeERC20 wrapper for the transfer
+            IERC20(address(celToken)).safeTransfer(msg.sender, userEmissions);
             emit IUHolderEmissionsClaimed(
                 epochNumber,
                 projectId,

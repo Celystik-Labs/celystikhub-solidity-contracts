@@ -16,7 +16,7 @@ import "./interfaces/ICELToken.sol";
  * - Burning with authorized burners
  * - Pausable transfers
  */
-contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
+abstract contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
 
 
     // Role-based access control for minters and burners
@@ -81,10 +81,11 @@ contract CELToken is Context, ERC20, ERC20Pausable, Ownable, ICELToken {
      * - the caller must have the {minter} role.
 
      */
-    function mint(address account, uint256 amount) public override {
+    function mint(address account, uint256 amount) public override returns(bool){
         require(_minters[_msgSender()], "CELToken: caller is not a minter");
 
         _mint(account, amount);
+        
     }
 
     /**
