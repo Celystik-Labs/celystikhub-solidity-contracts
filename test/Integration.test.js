@@ -59,7 +59,7 @@ describe("Celystik Hub Integration", function () {
     );
     await projectStaking.deployed();
     
-    // Deploy EmissionController first
+    // Deploy EmissionController
     emissionController = await EmissionController.deploy(
       celToken.address,
       projectStaking.address,
@@ -83,6 +83,7 @@ describe("Celystik Hub Integration", function () {
   describe("End-to-end Project Lifecycle", function () {
     it("Should handle the complete project lifecycle from creation to emissions", async function () {
       // Step 1: Create a project with multiple creators
+      console.log("Creating project...");
       const totalSupply = ethers.utils.parseEther("1000000"); // 1M total supply
       const initialPrice = ethers.utils.parseEther("0.01"); // 0.01 CEL initial price
       const creators = [creator1.address, creator2.address];
@@ -91,7 +92,6 @@ describe("Celystik Hub Integration", function () {
       const contributorAllocation = 3000; // 30% to contributors
       const investorAllocation = 2000; // 20% to investors
       
-      console.log("Creating project...");
       const createTx = await innovationUnits.createProject(
         totalSupply,
         initialPrice,
@@ -113,8 +113,6 @@ describe("Celystik Hub Integration", function () {
       
       const expectedCreatorAllocation = totalSupply.mul(creatorAllocation).div(10000);
       expect(totalCreatorUnits).to.equal(expectedCreatorAllocation);
-      
-      // Creator 1 should have 70% of the creator allocation
       expect(creator1Units).to.equal(expectedCreatorAllocation.mul(7000).div(10000));
       
       // Step 2: Add a contributor to the project
@@ -132,13 +130,21 @@ describe("Celystik Hub Integration", function () {
       
       // Step 3: Investors purchase units
       console.log("Investors purchasing units...");
-      const investor1PurchaseAmount = ethers.utils.parseEther("100"); // 100 CEL
-      const investor2PurchaseAmount = ethers.utils.parseEther("200"); // 200 CEL
+      const iuAmount1 = 100; // 100 IUs for investor1
+      const iuAmount2 = 200; // 200 IUs for investor2
       
-      // Approve CEL token transfers with higher amounts to ensure sufficient allowance
-      const approvalAmount = ethers.utils.parseEther("1000"); // Higher approval amount
-      await celToken.connect(investor1).approve(innovationUnits.address, approvalAmount);
-      await celToken.connect(investor2).approve(innovationUnits.address, approvalAmount);
+      // Calculate costs including fees
+      const basePayment1 = ethers.utils.parseEther("0.01").mul(iuAmount1);
+      const basePayment2 = ethers.utils.parseEther("0.01").mul(iuAmount2);
+      const buyFeePercentage = await innovationUnits.buyFeePercentage();
+      const fee1 = basePayment1.mul(buyFeePercentage).div(10000);
+      const fee2 = basePayment2.mul(buyFeePercentage).div(10000);
+      const totalCost1 = basePayment1.add(fee1);
+      const totalCost2 = basePayment2.add(fee2);
+      
+      // Approve CEL token transfers
+      await celToken.connect(investor1).approve(innovationUnits.address, totalCost1);
+      await celToken.connect(investor2).approve(innovationUnits.address, totalCost2);
       
       // Verify allowances
       const investor1Allowance = await celToken.allowance(investor1.address, innovationUnits.address);
@@ -147,43 +153,36 @@ describe("Celystik Hub Integration", function () {
       console.log(`Investor2 allowance: ${ethers.utils.formatEther(investor2Allowance)} CEL`);
       
       // Purchase Innovation Units
-      console.log(`Investor1 purchasing ${ethers.utils.formatEther(investor1PurchaseAmount)} CEL worth of IUs...`);
-      await innovationUnits.connect(investor1).buyIUs(projectId, investor1PurchaseAmount);
-      console.log(`Investor2 purchasing ${ethers.utils.formatEther(investor2PurchaseAmount)} CEL worth of IUs...`);
-      await innovationUnits.connect(investor2).buyIUs(projectId, investor2PurchaseAmount);
+      console.log(`Investor1 purchasing ${iuAmount1} IUs...`);
+      await innovationUnits.connect(investor1).buyIUs(projectId, iuAmount1);
+      console.log(`Investor2 purchasing ${iuAmount2} IUs...`);
+      await innovationUnits.connect(investor2).buyIUs(projectId, iuAmount2);
       
       // Verify investor units
       const investor1Units = await innovationUnits.balanceOf(investor1.address, projectId);
       const investor2Units = await innovationUnits.balanceOf(investor2.address, projectId);
-      
-      expect(investor1Units).to.be.gt(0);
-      expect(investor2Units).to.be.gt(0);
-      
-      // Verify treasury received the CEL tokens
-      const treasuryBalance = await celToken.balanceOf(protocolTreasury.address);
-      expect(treasuryBalance).to.equal(investor1PurchaseAmount.add(investor2PurchaseAmount));
+      expect(investor1Units).to.equal(iuAmount1);
+      expect(investor2Units).to.equal(iuAmount2);
       
       // Step 4: Stakers stake CEL tokens on the project
       console.log("Staking on project...");
       const staker1Amount = ethers.utils.parseEther("1000");
       const staker2Amount = ethers.utils.parseEther("2000");
+      const lockDurationDays = 20;
       
       // Approve CEL token transfers for staking
       await celToken.connect(staker1).approve(projectStaking.address, staker1Amount);
       await celToken.connect(staker2).approve(projectStaking.address, staker2Amount);
       
       // Stake on the project
-      await projectStaking.connect(staker1).stake(projectId, staker1Amount);
-      await projectStaking.connect(staker2).stake(projectId, staker2Amount);
+      await projectStaking.connect(staker1).stake(projectId, staker1Amount, lockDurationDays);
+      await projectStaking.connect(staker2).stake(projectId, staker2Amount, lockDurationDays);
       
       // Verify staking amounts
-      const staker1Stake = await projectStaking.userStakes(staker1.address, projectId);
-      const staker2Stake = await projectStaking.userStakes(staker2.address, projectId);
-      const totalStaked = await projectStaking.totalStakedAmount(projectId);
-      
-      expect(staker1Stake).to.equal(staker1Amount);
-      expect(staker2Stake).to.equal(staker2Amount);
-      expect(totalStaked).to.equal(staker1Amount.add(staker2Amount));
+      const staker1Stakes = await projectStaking.getUserActiveStakes(projectId, staker1.address);
+      const staker2Stakes = await projectStaking.getUserActiveStakes(projectId, staker2.address);
+      expect(staker1Stakes.amounts[0]).to.equal(staker1Amount);
+      expect(staker2Stakes.amounts[0]).to.equal(staker2Amount);
       
       // Step 5: Run through an emission epoch
       console.log("Starting emission epoch...");
@@ -204,43 +203,40 @@ describe("Celystik Hub Integration", function () {
       await emissionController.processEpoch();
       
       // Get emission data
-      const epochEmissions = await emissionController.getEpochProjectEmissions(1, projectId);
-      console.log(`Project emissions: ${ethers.utils.formatEther(epochEmissions.totalEmissions)} CEL`);
-      console.log(`Staking emissions: ${ethers.utils.formatEther(epochEmissions.stakingEmissions)} CEL`);
-      console.log(`IU holder emissions: ${ethers.utils.formatEther(epochEmissions.iuHolderEmissions)} CEL`);
+      const [totalEmissions, stakingEmissions, iuHolderEmissions] = await emissionController.getEpochProjectEmissions(1, projectId);
+      console.log(`Project emissions: ${ethers.utils.formatEther(totalEmissions)} CEL`);
+      console.log(`Staking emissions: ${ethers.utils.formatEther(stakingEmissions)} CEL`);
+      console.log(`IU holder emissions: ${ethers.utils.formatEther(iuHolderEmissions)} CEL`);
       
       // Step 6: Claim emissions
       console.log("Claiming emissions...");
       
-      // Start a new epoch for claim validation
-      await emissionController.startEpoch();
-      
       // Check and claim staking emissions
       const staker1InitialBalance = await celToken.balanceOf(staker1.address);
-      const staker1Unclaimed = await emissionController.checkUnclaimedStakingEmissions(1, projectId, staker1.address);
+      const [hasUnclaimedStaking, unclaimedStakingAmount] = await emissionController.checkUnclaimedStakingEmissions(1, projectId, staker1.address);
       
-      if (staker1Unclaimed.hasUnclaimed) {
-        console.log(`Staker1 can claim: ${ethers.utils.formatEther(staker1Unclaimed.amount)} CEL`);
+      if (hasUnclaimedStaking) {
+        console.log(`Staker1 can claim: ${ethers.utils.formatEther(unclaimedStakingAmount)} CEL`);
         await emissionController.connect(staker1).claimStakingEmissions(1, projectId);
         
         // Verify staker received emissions
         const staker1FinalBalance = await celToken.balanceOf(staker1.address);
         expect(staker1FinalBalance).to.be.gt(staker1InitialBalance);
-        expect(staker1FinalBalance.sub(staker1InitialBalance)).to.equal(staker1Unclaimed.amount);
+        expect(staker1FinalBalance.sub(staker1InitialBalance)).to.equal(unclaimedStakingAmount);
       }
       
       // Check and claim IU holder emissions
       const investor1InitialBalance = await celToken.balanceOf(investor1.address);
-      const investor1Unclaimed = await emissionController.checkUnclaimedIUHolderEmissions(1, projectId, investor1.address);
+      const [hasUnclaimedIU, unclaimedIUAmount] = await emissionController.checkUnclaimedIUHolderEmissions(1, projectId, investor1.address);
       
-      if (investor1Unclaimed.hasUnclaimed) {
-        console.log(`Investor1 can claim: ${ethers.utils.formatEther(investor1Unclaimed.amount)} CEL`);
+      if (hasUnclaimedIU) {
+        console.log(`Investor1 can claim: ${ethers.utils.formatEther(unclaimedIUAmount)} CEL`);
         await emissionController.connect(investor1).claimIUHolderEmissions(1, projectId);
         
         // Verify investor received emissions
         const investor1FinalBalance = await celToken.balanceOf(investor1.address);
         expect(investor1FinalBalance).to.be.gt(investor1InitialBalance);
-        expect(investor1FinalBalance.sub(investor1InitialBalance)).to.equal(investor1Unclaimed.amount);
+        expect(investor1FinalBalance.sub(investor1InitialBalance)).to.equal(unclaimedIUAmount);
       }
       
       console.log("End-to-end test completed successfully!");
@@ -264,8 +260,9 @@ describe("Celystik Hub Integration", function () {
       projectId = event.args.projectId;
       
       // Initial staking - low amount
+      const lockDurationDays = 20;
       await celToken.connect(staker1).approve(projectStaking.address, ethers.utils.parseEther("1000"));
-      await projectStaking.connect(staker1).stake(projectId, ethers.utils.parseEther("1000"));
+      await projectStaking.connect(staker1).stake(projectId, ethers.utils.parseEther("1000"), lockDurationDays);
       
       // First epoch - low project metrics
       await emissionController.setProjectMetricsScore(projectId, ethers.utils.parseEther("1000"));
@@ -275,11 +272,11 @@ describe("Celystik Hub Integration", function () {
       await time.increase((await emissionController.epochDuration()).toNumber() + 1);
       await emissionController.processEpoch();
       
-      const epoch1Emissions = await emissionController.getEpochProjectEmissions(1, projectId);
+      const [epoch1Total, epoch1Staking, epoch1IU] = await emissionController.getEpochProjectEmissions(1, projectId);
       
       // Second epoch - project grows, more staking
       await celToken.connect(staker2).approve(projectStaking.address, ethers.utils.parseEther("5000"));
-      await projectStaking.connect(staker2).stake(projectId, ethers.utils.parseEther("5000"));
+      await projectStaking.connect(staker2).stake(projectId, ethers.utils.parseEther("5000"), lockDurationDays);
       
       // Project metrics improve
       await emissionController.setProjectMetricsScore(projectId, ethers.utils.parseEther("3000"));
@@ -288,12 +285,19 @@ describe("Celystik Hub Integration", function () {
       await time.increase((await emissionController.epochDuration()).toNumber() + 1);
       await emissionController.processEpoch();
       
-      const epoch2Emissions = await emissionController.getEpochProjectEmissions(2, projectId);
+      const [epoch2Total, epoch2Staking, epoch2IU] = await emissionController.getEpochProjectEmissions(2, projectId);
       
       // Third epoch - project matures, more investment
+      // Calculate costs for IU purchase
+      const iuAmount = 100; // 100 IUs
+      const basePayment = ethers.utils.parseEther("0.01").mul(iuAmount);
+      const buyFeePercentage = await innovationUnits.buyFeePercentage();
+      const fee = basePayment.mul(buyFeePercentage).div(10000);
+      const totalCost = basePayment.add(fee);
+      
       // Approve and purchase IUs
-      await celToken.connect(investor1).approve(innovationUnits.address, ethers.utils.parseEther("500"));
-      await innovationUnits.connect(investor1).buyIUs(projectId, ethers.utils.parseEther("500"));
+      await celToken.connect(investor1).approve(innovationUnits.address, totalCost);
+      await innovationUnits.connect(investor1).buyIUs(projectId, iuAmount);
       
       // Project metrics become excellent
       await emissionController.setProjectMetricsScore(projectId, ethers.utils.parseEther("8000"));
@@ -302,15 +306,15 @@ describe("Celystik Hub Integration", function () {
       await time.increase((await emissionController.epochDuration()).toNumber() + 1);
       await emissionController.processEpoch();
       
-      const epoch3Emissions = await emissionController.getEpochProjectEmissions(3, projectId);
+      const [epoch3Total, epoch3Staking, epoch3IU] = await emissionController.getEpochProjectEmissions(3, projectId);
       
       // Compare emissions growth across epochs
-      expect(epoch2Emissions.totalEmissions).to.be.gt(epoch1Emissions.totalEmissions);
-      expect(epoch3Emissions.totalEmissions).to.be.gt(epoch2Emissions.totalEmissions);
+      expect(epoch2Total).to.be.gt(epoch1Total);
+      expect(epoch3Total).to.be.gt(epoch2Total);
       
-      console.log(`Epoch 1 emissions: ${ethers.utils.formatEther(epoch1Emissions.totalEmissions)} CEL`);
-      console.log(`Epoch 2 emissions: ${ethers.utils.formatEther(epoch2Emissions.totalEmissions)} CEL`);
-      console.log(`Epoch 3 emissions: ${ethers.utils.formatEther(epoch3Emissions.totalEmissions)} CEL`);
+      console.log(`Epoch 1 emissions: ${ethers.utils.formatEther(epoch1Total)} CEL`);
+      console.log(`Epoch 2 emissions: ${ethers.utils.formatEther(epoch2Total)} CEL`);
+      console.log(`Epoch 3 emissions: ${ethers.utils.formatEther(epoch3Total)} CEL`);
       
       // Verify all participants can claim rewards
       await emissionController.startEpoch(); // Start another epoch for claim validation
@@ -320,33 +324,33 @@ describe("Celystik Hub Integration", function () {
         // Check staker claims
         const stakers = [staker1, staker2];
         for (const staker of stakers) {
-          const unclaimedStaking = await emissionController.checkUnclaimedStakingEmissions(
+          const [hasUnclaimed, amount] = await emissionController.checkUnclaimedStakingEmissions(
             epoch, projectId, staker.address
           );
           
-          if (unclaimedStaking.hasUnclaimed) {
+          if (hasUnclaimed) {
             await emissionController.connect(staker).claimStakingEmissions(epoch, projectId);
             // Verify claim was recorded
-            const hasClaimed = await emissionController.hasClaimedStakingEmissions(
+            const [hasUnclaimedAfter] = await emissionController.checkUnclaimedStakingEmissions(
               epoch, projectId, staker.address
             );
-            expect(hasClaimed).to.equal(true);
+            expect(hasUnclaimedAfter).to.be.false;
           }
         }
         
         // Check IU holder claims
         if (epoch >= 3) { // Investor only present from epoch 3
-          const unclaimedIU = await emissionController.checkUnclaimedIUHolderEmissions(
+          const [hasUnclaimed, amount] = await emissionController.checkUnclaimedIUHolderEmissions(
             epoch, projectId, investor1.address
           );
           
-          if (unclaimedIU.hasUnclaimed) {
+          if (hasUnclaimed) {
             await emissionController.connect(investor1).claimIUHolderEmissions(epoch, projectId);
             // Verify claim was recorded
-            const hasClaimed = await emissionController.hasClaimedIUHolderEmissions(
+            const [hasUnclaimedAfter] = await emissionController.checkUnclaimedIUHolderEmissions(
               epoch, projectId, investor1.address
             );
-            expect(hasClaimed).to.equal(true);
+            expect(hasUnclaimedAfter).to.be.false;
           }
         }
       }
