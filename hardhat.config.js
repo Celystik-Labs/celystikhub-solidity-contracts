@@ -70,6 +70,18 @@ module.exports = {
       accounts: [PRIVATE_KEY],
       chainId: 10
     },
+    optimismSepolia: {
+      url: process.env.OPTIMISM_SEPOLIA_RPC_URL || "https://sepolia.optimism.io",
+      accounts: [process.env.PRIVATE_KEY],
+      chainId: 11155420,
+      gasPrice: process.env.GAS_PRICE !== "auto" ? parseInt(process.env.GAS_PRICE) : "auto",
+      gasLimit: parseInt(process.env.GAS_LIMIT || "8000000"),
+      verify: {
+        etherscan: {
+          apiKey: process.env.OPTIMISM_API_KEY
+        }
+      }
+    },
     arbitrum: {
       url: `https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}`,
       accounts: [PRIVATE_KEY],
@@ -89,10 +101,21 @@ module.exports = {
       
       // Optimism
       optimisticEthereum: OPTIMISM_API_KEY,
+      optimisticSepolia: OPTIMISM_API_KEY,
       
       // Arbitrum
       arbitrumOne: ARBISCAN_API_KEY,
-    }
+    },
+    customChains: [
+      {
+        network: "optimisticSepolia",
+        chainId: 11155420,
+        urls: {
+          apiURL: "https://api-sepolia-optimistic.etherscan.io/api",
+          browserURL: "https://sepolia-optimism.etherscan.io/"
+        }
+      }
+    ]
   },
   paths: {
     sources: "./contracts",
