@@ -52,12 +52,6 @@ async function main() {
   console.log("\n🔷 Deploying Emission Controller...");
   const EmissionController = await ethers.getContractFactory("EmissionController");
   
-  // Grant minter role to deployer temporarily to allow setting up EmissionController
-  const minterRole = await celToken.isMinter(deployer.address);
-  if (!minterRole) {
-    console.log("📝 Granting minter role to deployer...");
-    await celToken.setMinter(deployer.address, true);
-  }
   
   const emissionController = await EmissionController.deploy(
     celToken.address,
@@ -76,29 +70,7 @@ async function main() {
   await projectStaking.setEmissionController(emissionController.address);
   console.log("✅ Emission Controller set in Project Staking");
 
-  // Deploy CelyHubFactory (optional - with direct usage architecture, this is no longer required)
-  let factoryAddress = "Not deployed (using direct contract interactions)";
   
-  const deployFactory = false; // Set to true if you want to deploy the Factory
-  if (deployFactory) {
-    console.log("\n🔷 Deploying CelyHub Factory...");
-    const CelyHubFactory = await ethers.getContractFactory("CelyHubFactory");
-    const factory = await CelyHubFactory.deploy(
-      celToken.address,
-      innovationUnits.address,
-      projectStaking.address,
-      emissionController.address,
-      protocolTreasury.address
-    );
-    await factory.deployed();
-    factoryAddress = factory.address;
-    console.log(`✅ CelyHub Factory deployed to: ${factory.address}`);
-    
-    // Transfer ownership of InnovationUnits to Factory (if using factory architecture)
-    await innovationUnits.transferOwnership(factory.address);
-    console.log("✅ Innovation Units ownership transferred to Factory");
-  }
-
   // Verify InnovationUnits is fully initialized
   const readyStatus = await innovationUnits.isReadyForDirectUse();
   if (readyStatus[0]) {
@@ -118,66 +90,7 @@ async function main() {
     }
   }
 
-  // Set up test project for development environments
-  if (network.name === "localhost" || network.name === "hardhat") {
-    console.log("\n🔷 Setting up test project...");
-    
-    // Create a test project
-    const creators = [deployer.address];
-    const creatorShares = [10000]; // 100% to deployer
-    const projectId = await innovationUnits.createProject(
-      ethers.utils.parseEther("1000000"), // 1M total supply
-      ethers.utils.parseEther("0.01"), // 0.01 CEL initial price
-      creators,
-      creatorShares,
-      5000, // 50% to creators
-      3000, // 30% to contributors
-      2000  // 20% to investors
-    );
-    
-    console.log(`✅ Test project #${(await projectId).toNumber()} created with deployer as creator`);
-    console.log("✅ Creator tokens automatically minted during project creation");
-    
-    // Create another project with multiple creators as an example
-    if (network.name === "hardhat") { // Only for hardhat network to avoid complex test setup
-      // Get a couple of test accounts
-      const [, creator2, creator3] = await ethers.getSigners();
-      
-      console.log("\n🔷 Creating another test project with multiple creators...");
-      const multiCreatorProjectId = await innovationUnits.createProject(
-        ethers.utils.parseEther("2000000"), // 2M total supply
-        ethers.utils.parseEther("0.02"), // 0.02 CEL initial price
-        [deployer.address, creator2.address, creator3.address], 
-        [5000, 3000, 2000], // 50%, 30%, 20% distribution
-        6000, // 60% to creators
-        2000, // 20% to contributors
-        2000  // 20% to investors
-      );
-      
-      console.log(`✅ Multi-creator project #${(await multiCreatorProjectId).toNumber()} created`);
-      console.log("✅ Tokens automatically minted to all creators based on their shares");
-      
-      // Example of a creator adding a contributor (for documentation purposes)
-      try {
-        console.log("\n🔷 Demonstrating contributor token minting...");
-        // Mint some contributor tokens - this should succeed because deployer is a creator
-        await innovationUnits.mintToContributor(
-          await multiCreatorProjectId, 
-          ethers.constants.AddressZero.replace('0x00', '0x12'), // Just a random contributor address
-          ethers.utils.parseEther("10000") // 10k tokens
-        );
-        console.log("✅ Creator successfully minted tokens to a contributor");
-      } catch (error) {
-        console.error("❌ Failed to mint to contributor:", error.message);
-      }
-    }
-    
-    // Mint some CEL tokens to the deployer for testing
-    if (!minterRole) {
-      await celToken.mint(deployer.address, ethers.utils.parseEther("1000000"));
-      console.log("✅ CEL tokens minted to deployer for testing");
-    }
-  }
+  
 
   // Print summary
   console.log("\n=== CELYSTIK HUB DEPLOYMENT SUMMARY ===");
@@ -186,7 +99,6 @@ async function main() {
   console.log(`Innovation Units: ${innovationUnits.address}`);
   console.log(`Project Staking: ${projectStaking.address}`);
   console.log(`Emission Controller: ${emissionController.address}`);
-  console.log(`CelyHub Factory: ${factoryAddress}`);
   console.log("=======================================");
   console.log("🎉 Deployment completed successfully!");
 }

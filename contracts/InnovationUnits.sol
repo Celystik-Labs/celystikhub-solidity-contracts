@@ -14,7 +14,6 @@ import "./interfaces/IInnovationUnits.sol";
  * @title InnovationUnits
  * @dev ERC-1155 token for representing Innovation Units (IUs) for multiple projects
  * Each token ID represents a different project's Innovation Units
- * This approach avoids deploying separate contracts for each project
  *
  * Note: This contract implements all functions defined in IInnovationUnits interface
  * but doesn't explicitly inherit from it to avoid duplicate event definitions.

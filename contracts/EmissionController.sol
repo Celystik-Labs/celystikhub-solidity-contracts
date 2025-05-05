@@ -91,11 +91,11 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         stakingContract = IProjectStaking(_stakingContract);
         innovationUnits = IInnovationUnits(_innovationUnits);
 
-        // Verify this contract has minter permissions
-        require(
-            celToken.isMinter(address(this)),
-            "EmissionController must have minter role"
-        );
+        // // Verify this contract has minter permissions
+        // require(
+        //     celToken.isMinter(address(this)),
+        //     "EmissionController must have minter role"
+        // );
     }
 
     /**

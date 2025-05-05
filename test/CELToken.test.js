@@ -18,8 +18,7 @@ describe("CELToken", function () {
     celToken = await CELToken.deploy(
       "Celystik Hub Token", // name
       "CEL",               // symbol
-      ethers.utils.parseEther("1000000"), // Initial supply: 1 million tokens
-      ethers.utils.parseEther("10000000") // Cap: 10 million tokens
+      ethers.utils.parseEther("1000000") // Initial supply: 1 million tokens
     );
     await celToken.deployed();
   });
@@ -37,10 +36,6 @@ describe("CELToken", function () {
     it("Should set the correct token name and symbol", async function () {
       expect(await celToken.name()).to.equal("Celystik Hub Token");
       expect(await celToken.symbol()).to.equal("CEL");
-    });
-
-    it("Should set the correct cap", async function () {
-      expect(await celToken.cap()).to.equal(ethers.utils.parseEther("10000000"));
     });
   });
 
@@ -112,17 +107,6 @@ describe("CELToken", function () {
         celToken.connect(addr1).mint(addr2.address, 1000)
       ).to.be.revertedWith("CELToken: caller is not a minter");
     });
-    
-    it("Should not allow minting beyond the cap", async function () {
-      const cap = await celToken.cap();
-      const initialSupply = await celToken.totalSupply();
-      const mintAmount = cap.sub(initialSupply).add(1); // One more than allowed
-      
-      // Try to mint beyond the cap
-      await expect(
-        celToken.mint(addr1.address, mintAmount)
-      ).to.be.revertedWith("CELToken: cap exceeded");
-    });
   });
 
   describe("Access Control", function () {
@@ -176,7 +160,7 @@ describe("CELToken", function () {
       // Try to transfer tokens
       await expect(
         celToken.transfer(addr1.address, 100)
-      ).to.be.revertedWith("ERC20Pausable: token transfer while paused");
+      ).to.be.revertedWith("CELToken: token transfer while paused");
       
       // Unpause the token
       await celToken.unpause();
