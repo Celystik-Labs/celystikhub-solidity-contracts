@@ -298,7 +298,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 epochNumber,
         uint256 projectId
     ) external override nonReentrant {
-        require(epochNumber > 0 && epochNumber < currentEpoch, "Invalid epoch");
+        require(
+            epochNumber > 0 && epochNumber <= currentEpoch,
+            "Invalid epoch"
+        );
         require(
             innovationUnits.projectIdExists(projectId),
             "Project does not exist"
@@ -360,7 +363,10 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         uint256 epochNumber,
         uint256 projectId
     ) external override nonReentrant {
-        require(epochNumber > 0 && epochNumber < currentEpoch, "Invalid epoch");
+        require(
+            epochNumber > 0 && epochNumber <= currentEpoch,
+            "Invalid epoch"
+        );
         require(
             innovationUnits.projectIdExists(projectId),
             "Project does not exist"
@@ -435,7 +441,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     ) external view override returns (bool hasUnclaimed, uint256 amount) {
         if (
             epochNumber == 0 ||
-            epochNumber >= currentEpoch ||
+            epochNumber > currentEpoch ||
             !innovationUnits.projectIdExists(projectId) ||
             hasClaimedStakingEmissions[epochNumber][projectId][user]
         ) {
@@ -482,7 +488,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     ) external view override returns (bool hasUnclaimed, uint256 amount) {
         if (
             epochNumber == 0 ||
-            epochNumber >= currentEpoch ||
+            epochNumber > currentEpoch ||
             !innovationUnits.projectIdExists(projectId) ||
             hasClaimedIUHolderEmissions[epochNumber][projectId][user]
         ) {

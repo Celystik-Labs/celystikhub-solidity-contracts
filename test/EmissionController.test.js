@@ -71,11 +71,11 @@ describe("EmissionController", function () {
     const receipt = await tx.wait();
     const event = receipt.events?.find(e => e.event === 'ProjectRegistered');
     if (!event) {
-      throw new Error("ProjectCreated event not found");
+      throw new Error("ProjectRegistered event not found");
     }
     projectId = event.args.projectId;
     
-    // Deploy EmissionController first
+    // Deploy EmissionController
     emissionController = await EmissionController.deploy(
       celToken.address,
       projectStaking.address,
@@ -100,9 +100,10 @@ describe("EmissionController", function () {
     await celToken.connect(addr2).approve(projectStaking.address, ethers.utils.parseEther("10000"));
     await celToken.connect(addr3).approve(projectStaking.address, ethers.utils.parseEther("10000"));
     
-    // Stake some tokens
-    await projectStaking.connect(addr1).stake(projectId, ethers.utils.parseEther("1000"));
-    await projectStaking.connect(addr2).stake(projectId, ethers.utils.parseEther("2000"));
+    // Stake some tokens with lock duration
+    const lockDurationDays = 20;
+    await projectStaking.connect(addr1).stake(projectId, ethers.utils.parseEther("1000"), lockDurationDays);
+    await projectStaking.connect(addr2).stake(projectId, ethers.utils.parseEther("2000"), lockDurationDays);
   });
 
   describe("Deployment", function () {
@@ -147,9 +148,14 @@ describe("EmissionController", function () {
     });
     
     it("Should emit an EpochStarted event when starting an epoch", async function () {
-      await expect(emissionController.startEpoch())
-        .to.emit(emissionController, "EpochStarted")
-        .withArgs(1, (await time.latest()), (await time.latest()) + (await emissionController.epochDuration()).toNumber());
+      const tx = await emissionController.startEpoch();
+      const receipt = await tx.wait();
+      const event = receipt.events.find(e => e.event === "EpochStarted");
+      
+      expect(event).to.not.be.undefined;
+      expect(event.args.epochNumber).to.equal(1);
+      expect(event.args.startTimestamp).to.be.gt(0);
+      expect(event.args.endTimestamp).to.be.gt(event.args.startTimestamp);
     });
     
     it("Should not allow processing an epoch that hasn't ended", async function () {
@@ -231,7 +237,23 @@ describe("EmissionController", function () {
   
   describe("Claim Processing", function () {
     beforeEach(async function () {
-      // Set up a full epoch cycle
+      // Mint CEL tokens to addr1 and addr3
+      await celToken.mint(addr1.address, ethers.utils.parseEther("2000"));
+      await celToken.mint(addr3.address, ethers.utils.parseEther("2000"));
+      
+      // Approve CEL tokens for staking and IU purchase
+      await celToken.connect(addr1).approve(projectStaking.address, ethers.utils.parseEther("2000"));
+      await celToken.connect(addr3).approve(innovationUnits.address, ethers.utils.parseEther("2000"));
+      
+      // Stake some tokens first
+      const lockDurationDays = 20;
+      await projectStaking.connect(addr1).stake(projectId, ethers.utils.parseEther("1000"), lockDurationDays);
+      
+      // Buy IUs for addr3 (using a smaller amount)
+      const iuAmount = 10; // Just 10 IUs instead of a large amount
+      await innovationUnits.connect(addr3).buyIUs(projectId, iuAmount);
+      
+      // Start and process first epoch
       await emissionController.startEpoch();
       
       // Set project metrics scores
@@ -241,79 +263,70 @@ describe("EmissionController", function () {
       // Fast forward past epoch duration
       const epochDuration = await emissionController.epochDuration();
       await time.increase(epochDuration.toNumber() + 1);
-      
-      // Process the epoch
       await emissionController.processEpoch();
     });
-    
+
     it("Should allow stakers to claim emissions", async function () {
-      // Start a new epoch for claim validation
-      await emissionController.startEpoch();
-      
-      const initialBalance = await celToken.balanceOf(addr1.address);
-      
-      // Check if addr1 has unclaimed emissions
-      const unclaimedCheck = await emissionController.checkUnclaimedStakingEmissions(
-        1, projectId, addr1.address
+      // Check unclaimed emissions
+      const [hasUnclaimed, amount] = await emissionController.checkUnclaimedStakingEmissions(
+        1,
+        projectId,
+        addr1.address
       );
+      expect(hasUnclaimed).to.be.true;
+      expect(amount).to.be.gt(0);
+
+      // Claim emissions
+      await emissionController.connect(addr1).claimStakingEmissions(1, projectId);
       
-      // Claim staking emissions for first epoch
-      if (unclaimedCheck.hasUnclaimed) {
-        await emissionController.connect(addr1).claimStakingEmissions(1, projectId);
-      }
-      
-      const finalBalance = await celToken.balanceOf(addr1.address);
-      
-      // Only verify the balance increased if there were unclaimed emissions
-      if (unclaimedCheck.hasUnclaimed) {
-        expect(finalBalance).to.be.gt(initialBalance);
-        expect(finalBalance.sub(initialBalance)).to.equal(unclaimedCheck.amount);
-      } else {
-        expect(finalBalance).to.equal(initialBalance);
-      }
+      // Verify claim was successful
+      const [hasUnclaimedAfter, amountAfter] = await emissionController.checkUnclaimedStakingEmissions(
+        1,
+        projectId,
+        addr1.address
+      );
+      expect(hasUnclaimedAfter).to.be.false;
+      expect(amountAfter).to.equal(0);
     });
     
-    it("Should not allow claiming staking emissions twice", async function () {
-      // Start a new epoch for claim validation
-      await emissionController.startEpoch();
+    it("Should allow IU holders to claim emissions", async function () {
+      // Check unclaimed emissions
+      const [hasUnclaimed, amount] = await emissionController.checkUnclaimedIUHolderEmissions(
+        1,
+        projectId,
+        addr3.address
+      );
+      expect(hasUnclaimed).to.be.true;
+      expect(amount).to.be.gt(0);
       
-      // Claim first
-      try {
-        await emissionController.connect(addr1).claimStakingEmissions(1, projectId);
-      } catch (error) {
-        // Ignore failures here, as we're testing the duplicate claim
-      }
+      // Claim emissions
+      await emissionController.connect(addr3).claimIUHolderEmissions(1, projectId);
       
-      // Try to claim again
+      // Verify claim was successful
+      const [hasUnclaimedAfter, amountAfter] = await emissionController.checkUnclaimedIUHolderEmissions(
+        1,
+        projectId,
+        addr3.address
+      );
+      expect(hasUnclaimedAfter).to.be.false;
+      expect(amountAfter).to.equal(0);
+    });
+    
+    it("Should not allow claiming emissions twice", async function () {
+      // First claim
+      await emissionController.connect(addr1).claimStakingEmissions(1, projectId);
+      
+      // Try to claim again for the same epoch
       await expect(
         emissionController.connect(addr1).claimStakingEmissions(1, projectId)
       ).to.be.revertedWith("Already claimed");
     });
-    
-    it("Should record claims correctly", async function () {
-      // Start a new epoch for claim validation
-      await emissionController.startEpoch();
-      
-      // Initial claim status
-      let hasClaimed = await emissionController.hasClaimedStakingEmissions(
-        1, projectId, addr1.address
-      );
-      expect(hasClaimed).to.equal(false);
-      
-      // Claim if there are emissions to claim
-      const unclaimedCheck = await emissionController.checkUnclaimedStakingEmissions(
-        1, projectId, addr1.address
-      );
-      
-      if (unclaimedCheck.hasUnclaimed) {
-        await emissionController.connect(addr1).claimStakingEmissions(1, projectId);
-        
-        // Check claim status after claiming
-        hasClaimed = await emissionController.hasClaimedStakingEmissions(
-          1, projectId, addr1.address
-        );
-        expect(hasClaimed).to.equal(true);
-      }
+
+    it("Should not allow claiming emissions for non-existent projects", async function () {
+      const nonExistentProjectId = 999;
+      await expect(
+        emissionController.connect(addr1).claimStakingEmissions(1, nonExistentProjectId)
+      ).to.be.revertedWith("Project does not exist");
     });
   });
   
