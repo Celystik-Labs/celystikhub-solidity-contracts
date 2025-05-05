@@ -219,7 +219,6 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < _creatorShares.length; i++) {
             totalCreatorShares = totalCreatorShares.add(_creatorShares[i]);
         }
-        
 
         uint256 totalPercentage = _contributorsReservePercentage.add(
             (_investorsReservePercentage.add(_creatorsAllocatedPercentage))
@@ -342,6 +341,35 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Calculate total cost (including fees) for buying a specific amount of IUs
+     * @param projectId The project ID (token ID) of the IUs
+     * @param amount Amount of IUs to buy
+     * @return basePayment The base cost without fees
+     * @return fee The fee amount
+     * @return totalCost The total cost including fees
+     */
+    function calculateBuyingCost(
+        uint256 projectId,
+        uint256 amount
+    )
+        public
+        view
+        projectExists(projectId)
+        returns (uint256 basePayment, uint256 fee, uint256 totalCost)
+    {
+        require(amount > 0, "Amount must be greater than 0");
+
+        ProjectData storage project = projects[projectId];
+
+        // Calculate payment amounts
+        basePayment = amount.mul(project.initialPrice);
+        fee = basePayment.mul(buyFeePercentage).div(10000);
+        totalCost = basePayment.add(fee);
+
+        return (basePayment, fee, totalCost);
+    }
+
+    /**
      * @dev Buy IUs directly with CEL tokens
      * @param projectId The project ID (token ID) of the IUs
      * @param amount Amount of IUs to buy
@@ -370,10 +398,13 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             "Exceeds investors allocation"
         );
 
-        // Calculate payment amounts
-        uint256 basePayment = amount.mul(project.initialPrice);
-        uint256 fee = basePayment.mul(buyFeePercentage).div(10000);
-        totalCost = basePayment.add(fee);
+        // Calculate payment amounts using the new function
+        (
+            uint256 basePayment,
+            uint256 fee,
+            uint256 totalCost
+        ) = calculateBuyingCost(projectId, amount);
+        feePaid = fee;
 
         // Transfer CEL tokens from buyer to this contract
         celToken.safeTransferFrom(msg.sender, address(this), totalCost);
@@ -409,6 +440,35 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Calculate return amount (after fees) for selling a specific amount of IUs
+     * @param projectId The project ID (token ID) of the IUs
+     * @param amount Amount of IUs to sell
+     * @return baseReturn The base return without fees
+     * @return fee The fee amount
+     * @return netReturn The net return after fees
+     */
+    function calculateSellingReturn(
+        uint256 projectId,
+        uint256 amount
+    )
+        public
+        view
+        projectExists(projectId)
+        returns (uint256 baseReturn, uint256 fee, uint256 netReturn)
+    {
+        require(amount > 0, "Amount must be greater than 0");
+
+        ProjectData storage project = projects[projectId];
+
+        // Calculate return amounts
+        baseReturn = amount.mul(project.initialPrice);
+        fee = baseReturn.mul(sellFeePercentage).div(10000);
+        netReturn = baseReturn.sub(fee);
+
+        return (baseReturn, fee, netReturn);
+    }
+
+    /**
      * @dev Sell IUs for CEL tokens
      * @param projectId The project ID (token ID) of the IUs
      * @param amount Amount of IUs to sell
@@ -430,12 +490,12 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             "Insufficient balance"
         );
 
-        ProjectData storage project = projects[projectId];
-
-        // Calculate return amounts
-        uint256 baseReturn = amount.mul(project.initialPrice);
-        uint256 fee = baseReturn.mul(sellFeePercentage).div(10000);
-        uint256 netReturn = baseReturn.sub(fee);
+        // Calculate return amounts using the new function
+        (
+            uint256 baseReturn,
+            uint256 fee,
+            uint256 netReturn
+        ) = calculateSellingReturn(projectId, amount);
         amountReceived = netReturn;
         feePaid = fee;
 

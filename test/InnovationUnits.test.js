@@ -285,9 +285,17 @@ describe("InnovationUnits", function () {
 
     it("Should allow investors to buy IUs", async function () {
       const iuAmount = 100; // Just 100 IUs, not in wei
-      const tx = await innovationUnits.connect(investor1).buyIUs(projectId, iuAmount);
-      const receipt = await tx.wait();
+      
+      // Get total cost using the contract's calculation function
+      const [basePayment, fee, totalCost] = await innovationUnits.calculateBuyingCost(projectId, iuAmount);
+      
+      // Approve CEL tokens
+      await celToken.connect(investor1).approve(innovationUnits.address, totalCost);
+      
+      // Buy IUs
+      await innovationUnits.connect(investor1).buyIUs(projectId, iuAmount);
 
+      // Verify IU balance
       const balance = await innovationUnits.balanceOf(investor1.address, projectId);
       expect(balance).to.equal(iuAmount);
 
@@ -297,9 +305,6 @@ describe("InnovationUnits", function () {
 
       // Verify treasury received payment
       const treasuryBalance = await innovationUnits.projectTreasuryBalances(projectId);
-      const buyFeePercentage = await innovationUnits.buyFeePercentage();
-      const basePayment = ethers.utils.parseEther("0.01").mul(iuAmount);
-      const fee = basePayment.mul(buyFeePercentage).div(10000);
       expect(treasuryBalance).to.equal(basePayment);
     });
 
@@ -317,13 +322,15 @@ describe("InnovationUnits", function () {
       const iuAmount = 100; // Just 100 IUs, not in wei
       const initialTreasuryBalance = await celToken.balanceOf(protocolTreasury.address);
 
+      // Get total cost using the contract's calculation function
+      const [basePayment, fee, totalCost] = await innovationUnits.calculateBuyingCost(projectId, iuAmount);
+      
+      // Approve and buy
+      await celToken.connect(investor1).approve(innovationUnits.address, totalCost);
       await innovationUnits.connect(investor1).buyIUs(projectId, iuAmount);
 
       const finalTreasuryBalance = await celToken.balanceOf(protocolTreasury.address);
-      const buyFeePercentage = await innovationUnits.buyFeePercentage();
-      const basePayment = ethers.utils.parseEther("0.01").mul(iuAmount);
-      const expectedFee = basePayment.mul(buyFeePercentage).div(10000);
-      expect(finalTreasuryBalance.sub(initialTreasuryBalance)).to.equal(expectedFee);
+      expect(finalTreasuryBalance.sub(initialTreasuryBalance)).to.equal(fee);
     });
 
     it("Should track investor information correctly", async function () {
@@ -374,14 +381,13 @@ describe("InnovationUnits", function () {
       const sellAmount = 50; // Just 50 IUs, not in wei
       const initialBalance = await celToken.balanceOf(investor1.address);
 
+      // Get return amounts using the contract's calculation function
+      const [baseReturn, fee, netReturn] = await innovationUnits.calculateSellingReturn(projectId, sellAmount);
+
       await innovationUnits.connect(investor1).sellIUs(projectId, sellAmount);
 
       const finalBalance = await celToken.balanceOf(investor1.address);
-      const baseReturn = ethers.utils.parseEther("0.01").mul(sellAmount);
-      const sellFeePercentage = await innovationUnits.sellFeePercentage();
-      const fee = baseReturn.mul(sellFeePercentage).div(10000);
-      const expectedReturn = baseReturn.sub(fee);
-      expect(finalBalance.sub(initialBalance)).to.equal(expectedReturn);
+      expect(finalBalance.sub(initialBalance)).to.equal(netReturn);
 
       // Verify IU balance decreased
       const iuBalance = await innovationUnits.balanceOf(investor1.address, projectId);
@@ -392,13 +398,13 @@ describe("InnovationUnits", function () {
       const sellAmount = 50; // Just 50 IUs, not in wei
       const initialTreasuryBalance = await celToken.balanceOf(protocolTreasury.address);
 
+      // Get return amounts using the contract's calculation function
+      const [baseReturn, fee, netReturn] = await innovationUnits.calculateSellingReturn(projectId, sellAmount);
+
       await innovationUnits.connect(investor1).sellIUs(projectId, sellAmount);
 
       const finalTreasuryBalance = await celToken.balanceOf(protocolTreasury.address);
-      const baseReturn = ethers.utils.parseEther("0.01").mul(sellAmount);
-      const sellFeePercentage = await innovationUnits.sellFeePercentage();
-      const expectedFee = baseReturn.mul(sellFeePercentage).div(10000);
-      expect(finalTreasuryBalance.sub(initialTreasuryBalance)).to.equal(expectedFee);
+      expect(finalTreasuryBalance.sub(initialTreasuryBalance)).to.equal(fee);
     });
 
     it("Should allow adding liquidity", async function () {
@@ -428,6 +434,35 @@ describe("InnovationUnits", function () {
       const finalTreasuryBalance = await innovationUnits.projectTreasuryBalances(projectId);
       expect(finalBalance.sub(initialBalance)).to.equal(removeAmount);
       expect(initialTreasuryBalance.sub(finalTreasuryBalance)).to.equal(removeAmount);
+    });
+
+    it("Should calculate selling return correctly", async function () {
+      const sellAmount = 100; // 100 IUs
+      const expectedBaseReturn = ethers.utils.parseEther("0.01").mul(sellAmount);
+      const sellFeePercentage = await innovationUnits.sellFeePercentage();
+      const expectedFee = expectedBaseReturn.mul(sellFeePercentage).div(10000);
+      const expectedNetReturn = expectedBaseReturn.sub(expectedFee);
+
+      const [baseReturn, fee, netReturn] = await innovationUnits.calculateSellingReturn(projectId, sellAmount);
+
+      expect(baseReturn).to.equal(expectedBaseReturn);
+      expect(fee).to.equal(expectedFee);
+      expect(netReturn).to.equal(expectedNetReturn);
+    });
+
+    it("Should not calculate selling return for non-existent project", async function () {
+      const nonExistentProjectId = 999;
+      const sellAmount = 100;
+
+      await expect(
+        innovationUnits.calculateSellingReturn(nonExistentProjectId, sellAmount)
+      ).to.be.revertedWith("Project does not exist");
+    });
+
+    it("Should not calculate selling return for zero amount", async function () {
+      await expect(
+        innovationUnits.calculateSellingReturn(projectId, 0)
+      ).to.be.revertedWith("Amount must be greater than 0");
     });
   });
 

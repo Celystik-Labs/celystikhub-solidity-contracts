@@ -133,14 +133,9 @@ describe("Celystik Hub Integration", function () {
       const iuAmount1 = 100; // 100 IUs for investor1
       const iuAmount2 = 200; // 200 IUs for investor2
       
-      // Calculate costs including fees
-      const basePayment1 = ethers.utils.parseEther("0.01").mul(iuAmount1);
-      const basePayment2 = ethers.utils.parseEther("0.01").mul(iuAmount2);
-      const buyFeePercentage = await innovationUnits.buyFeePercentage();
-      const fee1 = basePayment1.mul(buyFeePercentage).div(10000);
-      const fee2 = basePayment2.mul(buyFeePercentage).div(10000);
-      const totalCost1 = basePayment1.add(fee1);
-      const totalCost2 = basePayment2.add(fee2);
+      // Calculate costs including fees using contract function
+      const [basePayment1, fee1, totalCost1] = await innovationUnits.calculateBuyingCost(projectId, iuAmount1);
+      const [basePayment2, fee2, totalCost2] = await innovationUnits.calculateBuyingCost(projectId, iuAmount2);
       
       // Approve CEL token transfers
       await celToken.connect(investor1).approve(innovationUnits.address, totalCost1);
@@ -288,12 +283,9 @@ describe("Celystik Hub Integration", function () {
       const [epoch2Total, epoch2Staking, epoch2IU] = await emissionController.getEpochProjectEmissions(2, projectId);
       
       // Third epoch - project matures, more investment
-      // Calculate costs for IU purchase
+      // Calculate costs for IU purchase using contract function
       const iuAmount = 100; // 100 IUs
-      const basePayment = ethers.utils.parseEther("0.01").mul(iuAmount);
-      const buyFeePercentage = await innovationUnits.buyFeePercentage();
-      const fee = basePayment.mul(buyFeePercentage).div(10000);
-      const totalCost = basePayment.add(fee);
+      const [basePayment, fee, totalCost] = await innovationUnits.calculateBuyingCost(projectId, iuAmount);
       
       // Approve and purchase IUs
       await celToken.connect(investor1).approve(innovationUnits.address, totalCost);
