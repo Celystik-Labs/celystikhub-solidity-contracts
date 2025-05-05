@@ -1,3 +1,7 @@
+To do
+Op test net deployemnt
+frontend integration scripts
+
 # Celystik Hub Smart Contracts
 
 This repository contains the smart contracts for the Celystik Hub platform, a decentralized ecosystem for managing Innovation Units (IUs), project staking, and emissions distribution.
