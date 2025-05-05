@@ -20,14 +20,14 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Durations (upgradable)
-    uint256 public minLockDuration = 7 days;
-    uint256 public maxLockDuration = 730 days; // ~2 years
+    uint256 public override minLockDuration = 7 days;
+    uint256 public override maxLockDuration = 730 days; // ~2 years
     uint256 public constant SCORE_PRECISION = 1e12; // Precision for score calculations
 
     // Multiplier factor (upgradable) - controls how much the score scales with time
     // Default is 2.0, meaning stake score can reach up to 3x (1x base + 2x duration bonus)
     // Can be configured between 1 and 19, resulting in max multipliers from 2x to 20x
-    uint256 public multiplierFactor = 2 * SCORE_PRECISION;
+    uint256 public override multiplierFactor = 2 * SCORE_PRECISION;
     uint256 public constant MIN_MULTIPLIER_FACTOR = 1 * SCORE_PRECISION; // 1x additional (2x max)
     uint256 public constant MAX_MULTIPLIER_FACTOR = 19 * SCORE_PRECISION; // 19x additional (20x max)
 
@@ -57,16 +57,16 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         public userProjectStakeIndexes;
 
     // Total staked amount and score for each user (across all projects)
-    mapping(address => uint256) public userTotalStaked;
+    mapping(address => uint256) public override userTotalStaked;
     mapping(address => uint256) public userTotalScore;
 
     // Total staked amount and score for each project
-    mapping(uint256 => uint256) public projectTotalStaked;
+    mapping(uint256 => uint256) public override projectTotalStaked;
     mapping(uint256 => uint256) public projectTotalScore;
 
     // Global staking statistics
-    uint256 public totalStaked;
-    uint256 public totalScore;
+    uint256 public override totalStaked;
+    uint256 public override totalScore;
     bool public paused;
 
     /**
@@ -122,7 +122,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 amount,
         uint256 lockDurationDays
-    ) external nonReentrant notPaused projectExists(projectId) {
+    ) external override nonReentrant notPaused projectExists(projectId) {
         require(amount > 0, "Amount must be greater than 0");
 
         // Convert days to seconds for consistency
@@ -189,7 +189,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     function unstake(
         uint256 projectId,
         uint256 stakeIndex
-    ) external nonReentrant projectExists(projectId) {
+    ) external override nonReentrant projectExists(projectId) {
         require(
             stakeIndex < projectUserStakes[projectId][msg.sender].length,
             "Invalid stake index"
@@ -245,7 +245,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         uint256 projectId,
         uint256 stakeIndex,
         address user
-    ) external nonReentrant onlyOwner projectExists(projectId) {
+    ) external override nonReentrant onlyOwner projectExists(projectId) {
         require(
             stakeIndex < projectUserStakes[projectId][user].length,
             "Invalid stake index"
@@ -289,7 +289,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     function calculateStakeScore(
         uint256 amount,
         uint256 lockDuration
-    ) public view returns (uint256) {
+    ) public view override returns (uint256) {
         // Base multiplier is 1.0
         uint256 baseMultiplier = SCORE_PRECISION;
 
@@ -322,7 +322,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         uint256 projectId,
         address user,
         uint256 stakeIndex
-    ) external view returns (bool canUnstake, uint256 unlockTime) {
+    ) external view override returns (bool canUnstake, uint256 unlockTime) {
         if (stakeIndex >= projectUserStakes[projectId][user].length) {
             return (false, 0);
         }
@@ -355,6 +355,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     )
         external
         view
+        override
         returns (
             uint256[] memory indexes,
             uint256[] memory amounts,
@@ -421,7 +422,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     function getUserProjectScore(
         uint256 projectId,
         address user
-    ) external view returns (uint256 score) {
+    ) external view override returns (uint256 score) {
         uint256[] memory stakeIndexes = userProjectStakeIndexes[user][
             projectId
         ];
@@ -443,7 +444,9 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      * @dev Get total score for a user across all projects
      * @param user Address of the user
      */
-    function getUserTotalScore(address user) external view returns (uint256) {
+    function getUserTotalScore(
+        address user
+    ) external view override returns (uint256) {
         return userTotalScore[user];
     }
 
@@ -453,7 +456,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      */
     function getProjectScore(
         uint256 projectId
-    ) external view returns (uint256) {
+    ) external view override returns (uint256) {
         return projectTotalScore[projectId];
     }
 
@@ -463,7 +466,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      */
     function setEmissionController(
         address _emissionController
-    ) external onlyOwner {
+    ) external override onlyOwner {
         require(
             _emissionController != address(0),
             "Invalid emission controller address"
@@ -476,7 +479,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      * @dev Pause or unpause staking
      * @param _paused New pause state
      */
-    function setPaused(bool _paused) external onlyOwner {
+    function setPaused(bool _paused) external override onlyOwner {
         paused = _paused;
         emit StakingPaused(_paused);
     }
@@ -508,7 +511,9 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      * @dev Update the minimum lock duration
      * @param _minLockDuration New minimum lock duration in seconds
      */
-    function setMinLockDuration(uint256 _minLockDuration) external onlyOwner {
+    function setMinLockDuration(
+        uint256 _minLockDuration
+    ) external override onlyOwner {
         require(_minLockDuration > 0, "Min duration must be greater than 0");
         require(
             _minLockDuration < maxLockDuration,
@@ -525,7 +530,9 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      * @dev Update the maximum lock duration
      * @param _maxLockDuration New maximum lock duration in seconds
      */
-    function setMaxLockDuration(uint256 _maxLockDuration) external onlyOwner {
+    function setMaxLockDuration(
+        uint256 _maxLockDuration
+    ) external override onlyOwner {
         require(
             _maxLockDuration > minLockDuration,
             "Max duration must be greater than min duration"
@@ -543,7 +550,9 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
      * @dev Update the multiplier factor that controls score scaling
      * @param _multiplierFactor New multiplier factor (in SCORE_PRECISION units)
      */
-    function setMultiplierFactor(uint256 _multiplierFactor) external onlyOwner {
+    function setMultiplierFactor(
+        uint256 _multiplierFactor
+    ) external override onlyOwner {
         require(
             _multiplierFactor >= MIN_MULTIPLIER_FACTOR &&
                 _multiplierFactor <= MAX_MULTIPLIER_FACTOR,
@@ -559,5 +568,4 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     /**
      * @dev Multiplier factor updated event
      */
-    
 }
