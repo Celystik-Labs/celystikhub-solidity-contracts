@@ -2,6 +2,7 @@
 // This script deploys all core contracts and initializes them properly
 // Run with: npx hardhat run scripts/deploy_optimism_testnet.js --network optimismSepolia
 
+require('dotenv').config();
 const { ethers } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
@@ -9,10 +10,16 @@ const path = require("path");
 async function main() {
   console.log("🚀 Starting Celystik Hub deployment on Optimism Sepolia Testnet...");
   
-  // Get signers
-  const [deployer] = await ethers.getSigners();
+  // Load the private key from the .env file
+  const privateKey = process.env.PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error("No private key provided in the .env file");
+  }
+
+  // Create a new signer with the private key
+  const deployer = new ethers.Wallet(privateKey);
   console.log(`📝 Deploying contracts with account: ${deployer.address}`);
-  console.log(`💰 Account balance: ${ethers.utils.formatEther(await deployer.getBalance())} ETH`);
+  
   
   // For tracking deployment status
   const deploymentData = {
