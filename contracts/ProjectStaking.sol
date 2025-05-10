@@ -56,6 +56,9 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     mapping(address => mapping(uint256 => uint256[]))
         public userProjectStakeIndexes;
 
+    // Mapping of user address => array of project IDs where user has active stakes
+    mapping(address => uint256[]) public userStakedProjectIds;
+
     // Total staked amount and score for each user (across all projects)
     mapping(address => uint256) public override userTotalStaked;
     mapping(address => uint256) public userTotalScore;
@@ -158,6 +161,20 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         // Track stake index for easier access
         userProjectStakeIndexes[msg.sender][projectId].push(stakeIndex);
 
+        // Check if this project is already in the user's staked projects list
+        bool projectExists = false;
+        for (uint256 i = 0; i < userStakedProjectIds[msg.sender].length; i++) {
+            if (userStakedProjectIds[msg.sender][i] == projectId) {
+                projectExists = true;
+                break;
+            }
+        }
+
+        // If not, add it
+        if (!projectExists) {
+            userStakedProjectIds[msg.sender].push(projectId);
+        }
+
         // Update totals
         userTotalStaked[msg.sender] = userTotalStaked[msg.sender].add(amount);
         userTotalScore[msg.sender] = userTotalScore[msg.sender].add(score);
@@ -223,6 +240,36 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         totalStaked = totalStaked.sub(userStake.amount);
         totalScore = totalScore.sub(userStake.score);
 
+        // Check if user still has any active stakes in this project
+        bool hasActiveStakes = false;
+        uint256[] memory indexes = userProjectStakeIndexes[msg.sender][
+            projectId
+        ];
+        for (uint256 i = 0; i < indexes.length; i++) {
+            if (
+                indexes[i] != stakeIndex &&
+                projectUserStakes[projectId][msg.sender][indexes[i]].isActive
+            ) {
+                hasActiveStakes = true;
+                break;
+            }
+        }
+
+        // If no more active stakes in this project, remove it from the user's staked projects
+        if (!hasActiveStakes) {
+            uint256 length = userStakedProjectIds[msg.sender].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (userStakedProjectIds[msg.sender][i] == projectId) {
+                    // Replace with the last element and pop
+                    userStakedProjectIds[msg.sender][i] = userStakedProjectIds[
+                        msg.sender
+                    ][length - 1];
+                    userStakedProjectIds[msg.sender].pop();
+                    break;
+                }
+            }
+        }
+
         // Transfer tokens back to user
         celToken.safeTransfer(msg.sender, userStake.amount);
 
@@ -272,6 +319,34 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
 
         totalStaked = totalStaked.sub(userStake.amount);
         totalScore = totalScore.sub(userStake.score);
+
+        // Check if user still has any active stakes in this project
+        bool hasActiveStakes = false;
+        uint256[] memory indexes = userProjectStakeIndexes[user][projectId];
+        for (uint256 i = 0; i < indexes.length; i++) {
+            if (
+                indexes[i] != stakeIndex &&
+                projectUserStakes[projectId][user][indexes[i]].isActive
+            ) {
+                hasActiveStakes = true;
+                break;
+            }
+        }
+
+        // If no more active stakes in this project, remove it from the user's staked projects
+        if (!hasActiveStakes) {
+            uint256 length = userStakedProjectIds[user].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (userStakedProjectIds[user][i] == projectId) {
+                    // Replace with the last element and pop
+                    userStakedProjectIds[user][i] = userStakedProjectIds[user][
+                        length - 1
+                    ];
+                    userStakedProjectIds[user].pop();
+                    break;
+                }
+            }
+        }
 
         // Transfer tokens back to user
         celToken.safeTransfer(user, userStake.amount);
@@ -412,6 +487,85 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
             lockDurations,
             scores
         );
+    }
+
+    /**
+     * @dev Get all project IDs where a user has active stakes
+     * @param user Address of the user
+     * @return Array of project IDs where the user has active stakes
+     */
+    function getUserStakedProjects(
+        address user
+    ) external view override returns (uint256[] memory) {
+        return userStakedProjectIds[user];
+    }
+
+    /**
+     * @dev Get all active stakes for a user across all projects
+     * @param user Address of the user
+     * @return projectIds Array of project IDs
+     * @return stakeIndexes Array of stake indexes for each project
+     * @return amounts Array of staked amounts
+     * @return unlockTimes Array of unlock times
+     */
+    function getAllUserStakes(
+        address user
+    )
+        external
+        view
+        override
+        returns (
+            uint256[] memory projectIds,
+            uint256[] memory stakeIndexes,
+            uint256[] memory amounts,
+            uint256[] memory unlockTimes
+        )
+    {
+        // Get projects where user has active stakes
+        uint256[] memory projects = userStakedProjectIds[user];
+
+        // Count total active stakes across all projects
+        uint256 totalStakes = 0;
+        for (uint256 i = 0; i < projects.length; i++) {
+            uint256 projectId = projects[i];
+            uint256[] memory indexes = userProjectStakeIndexes[user][projectId];
+
+            for (uint256 j = 0; j < indexes.length; j++) {
+                if (projectUserStakes[projectId][user][indexes[j]].isActive) {
+                    totalStakes++;
+                }
+            }
+        }
+
+        // Initialize return arrays
+        projectIds = new uint256[](totalStakes);
+        stakeIndexes = new uint256[](totalStakes);
+        amounts = new uint256[](totalStakes);
+        unlockTimes = new uint256[](totalStakes);
+
+        // Fill arrays with stake data
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < projects.length; i++) {
+            uint256 projectId = projects[i];
+            uint256[] memory indexes = userProjectStakeIndexes[user][projectId];
+
+            for (uint256 j = 0; j < indexes.length; j++) {
+                uint256 stakeIndex = indexes[j];
+                StakeInfo storage stake = projectUserStakes[projectId][user][
+                    stakeIndex
+                ];
+
+                if (stake.isActive) {
+                    projectIds[currentIndex] = projectId;
+                    stakeIndexes[currentIndex] = stakeIndex;
+                    amounts[currentIndex] = stake.amount;
+                    unlockTimes[currentIndex] = stake.unlockTime;
+                    currentIndex++;
+                }
+            }
+        }
+
+        return (projectIds, stakeIndexes, amounts, unlockTimes);
     }
 
     /**

@@ -90,6 +90,35 @@ interface IProjectStaking {
         );
 
     /**
+     * @dev Get all project IDs where a user has active stakes
+     * @param user Address of the user
+     * @return Array of project IDs where the user has active stakes
+     */
+    function getUserStakedProjects(
+        address user
+    ) external view returns (uint256[] memory);
+
+    /**
+     * @dev Get all active stakes for a user across all projects
+     * @param user Address of the user
+     * @return projectIds Array of project IDs
+     * @return stakeIndexes Array of stake indexes for each project
+     * @return amounts Array of staked amounts
+     * @return unlockTimes Array of unlock times
+     */
+    function getAllUserStakes(
+        address user
+    )
+        external
+        view
+        returns (
+            uint256[] memory projectIds,
+            uint256[] memory stakeIndexes,
+            uint256[] memory amounts,
+            uint256[] memory unlockTimes
+        );
+
+    /**
      * @dev Get user score for a specific project (for emissions)
      * @param projectId ID of the project
      * @param user Address of the user

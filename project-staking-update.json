@@ -1,0 +1,22 @@
+{
+  "network": "optimismSepolia",
+  "chainId": 11155420,
+  "deployer": "0x267b6933Afb44989fb8230E60D5D90baE6511F43",
+  "timestamp": "2025-05-10T14:22:14.477Z",
+  "contracts": {
+    "existing": {
+      "CELToken": "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
+      "InnovationUnits": "0x9Fe7f2E9fed01a1ED17d16c0cC90e3911C0AEF16",
+      "EmissionController": "0x0FC1660B47b419D4384CfEc6Cf6D2D177C1Dea57"
+    },
+    "updated": {
+      "ProjectStaking": {
+        "address": "0xC7de16d27F8D85c94E4D44173861c186524B675b",
+        "constructorArgs": [
+          "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
+          "0x9Fe7f2E9fed01a1ED17d16c0cC90e3911C0AEF16"
+        ]
+      }
+    }
+  }
+}
