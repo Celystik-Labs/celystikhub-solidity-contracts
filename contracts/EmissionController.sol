@@ -680,6 +680,21 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Force stop the current epoch without processing it (for debugging only)
+     * This function should only be used in development environments for testing
+     */
+    function forceStopEpoch() external override onlyOwner {
+        require(epochActive, "No active epoch");
+
+        uint256 stoppedEpoch = currentEpoch;
+        epochActive = false;
+        // Set end timestamp to current time so the epoch can be processed immediately
+        epochEndTimestamp = block.timestamp;
+
+        emit EpochForceStopped(stoppedEpoch, block.timestamp);
+    }
+
+    /**
      * @dev Withdraw tokens in case of emergency
      * @param token Address of the token to withdraw
      * @param amount Amount to withdraw

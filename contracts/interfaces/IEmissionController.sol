@@ -19,6 +19,12 @@ interface IEmissionController {
     function processEpoch() external;
 
     /**
+     * @dev Force stop the current epoch without processing it (for debugging only)
+     * This function should only be used in development environments for testing
+     */
+    function forceStopEpoch() external;
+
+    /**
      * @dev Calculate global impact score based on staking and metrics
      * @param _globalStakingScore The total staking score across all projects
      * @param _globalMetricsScore The global metrics score
@@ -209,6 +215,11 @@ interface IEmissionController {
      * @dev Emitted when an epoch is processed and emissions are calculated
      */
     event EpochProcessed(uint256 indexed epochNumber, uint256 totalEmissions);
+
+    /**
+     * @dev Emitted when an epoch is forcefully stopped without processing (debugging only)
+     */
+    event EpochForceStopped(uint256 indexed epochNumber, uint256 timestamp);
 
     /**
      * @dev Emitted when project emissions are calculated
