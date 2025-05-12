@@ -72,6 +72,11 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     uint256 public override totalScore;
     bool public paused;
 
+    // Mapping to keep track of all stakers for each project
+    mapping(uint256 => address[]) public projectStakers;
+    // Mapping to check if a staker is already in the projectStakers array to prevent duplicates
+    mapping(uint256 => mapping(address => bool)) public isProjectStaker;
+
     /**
      * @dev Modifier to check if a project exists
      */
@@ -187,6 +192,12 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         totalStaked = totalStaked.add(amount);
         totalScore = totalScore.add(score);
 
+        // Add the staker to the projectStakers array
+        if (!isProjectStaker[projectId][msg.sender]) {
+            projectStakers[projectId].push(msg.sender);
+            isProjectStaker[projectId][msg.sender] = true;
+        }
+
         emit Staked(
             msg.sender,
             projectId,
@@ -273,6 +284,22 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         // Transfer tokens back to user
         celToken.safeTransfer(msg.sender, userStake.amount);
 
+        // Remove the staker from the projectStakers array
+        if (isProjectStaker[projectId][msg.sender]) {
+            uint256 length = projectStakers[projectId].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (projectStakers[projectId][i] == msg.sender) {
+                    // Replace with the last element and pop
+                    projectStakers[projectId][i] = projectStakers[projectId][
+                        length - 1
+                    ];
+                    projectStakers[projectId].pop();
+                    break;
+                }
+            }
+            isProjectStaker[projectId][msg.sender] = false;
+        }
+
         emit Unstaked(
             msg.sender,
             projectId,
@@ -350,6 +377,22 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
 
         // Transfer tokens back to user
         celToken.safeTransfer(user, userStake.amount);
+
+        // Remove the staker from the projectStakers array
+        if (isProjectStaker[projectId][user]) {
+            uint256 length = projectStakers[projectId].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (projectStakers[projectId][i] == user) {
+                    // Replace with the last element and pop
+                    projectStakers[projectId][i] = projectStakers[projectId][
+                        length - 1
+                    ];
+                    projectStakers[projectId].pop();
+                    break;
+                }
+            }
+            isProjectStaker[projectId][user] = false;
+        }
 
         emit EmergencyUnstaked(user, projectId, userStake.amount, stakeIndex);
     }
@@ -717,6 +760,48 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
         multiplierFactor = _multiplierFactor;
 
         emit MultiplierFactorUpdated(oldMultiplierFactor, _multiplierFactor);
+    }
+
+    /**
+     * @dev Get all stakers for a specific project
+     * @param projectId ID of the project
+     * @return stakers Array of staker addresses with active stakes in the project
+     * @return amounts Array of total staked amounts for each staker
+     */
+    function getProjectStakers(
+        uint256 projectId
+    )
+        external
+        view
+        projectExists(projectId)
+        returns (address[] memory stakers, uint256[] memory amounts)
+    {
+        // Get all stakers for this project from our tracking array
+        address[] storage projectStakerList = projectStakers[projectId];
+        amounts = new uint256[](projectStakerList.length);
+
+        // Get the staked amount for each staker
+        for (uint256 i = 0; i < projectStakerList.length; i++) {
+            address staker = projectStakerList[i];
+            // Get the user's staked amount across all active stakes
+            uint256[] memory stakeIndexes = userProjectStakeIndexes[staker][
+                projectId
+            ];
+            uint256 totalAmount = 0;
+
+            for (uint256 j = 0; j < stakeIndexes.length; j++) {
+                StakeInfo storage stake = projectUserStakes[projectId][staker][
+                    stakeIndexes[j]
+                ];
+                if (stake.isActive) {
+                    totalAmount = totalAmount.add(stake.amount);
+                }
+            }
+
+            amounts[i] = totalAmount;
+        }
+
+        return (projectStakerList, amounts);
     }
 
     /**
