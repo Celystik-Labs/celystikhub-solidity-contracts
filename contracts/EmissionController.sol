@@ -687,8 +687,6 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         require(epochActive, "No active epoch");
 
         uint256 stoppedEpoch = currentEpoch;
-        epochActive = false;
-        // Set end timestamp to current time so the epoch can be processed immediately
         epochEndTimestamp = block.timestamp;
 
         emit EpochForceStopped(stoppedEpoch, block.timestamp);
