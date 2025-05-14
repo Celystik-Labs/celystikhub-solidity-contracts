@@ -393,12 +393,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         // Get total supply of IUs for this project
         // Note: We need to track or calculate total IUs at the end of the epoch
         // For simplicity, we're using current total, but a snapshot mechanism would be more accurate
-        (, uint256[] memory amounts) = innovationUnits.getInvestorsInfo(
-            projectId
-        );
-        for (uint256 i = 0; i < amounts.length; i++) {
-            totalProjectIUs = totalProjectIUs.add(amounts[i]);
-        }
+        totalProjectIUs = innovationUnits.getTotalSupply(projectId);
 
         // If no IUs in circulation or user has none, return early
         if (totalProjectIUs == 0 || userIUs == 0) {
@@ -509,12 +504,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         // Get total supply of IUs for this project
         // Note: We need to track or calculate total IUs at the end of the epoch
         // For simplicity, we're using current total, but a snapshot mechanism would be more accurate
-        (, uint256[] memory amounts) = innovationUnits.getInvestorsInfo(
-            projectId
-        );
-        for (uint256 i = 0; i < amounts.length; i++) {
-            totalProjectIUs = totalProjectIUs.add(amounts[i]);
-        }
+        totalProjectIUs = innovationUnits.getTotalSupply(projectId);
 
         if (totalProjectIUs == 0 || userIUs == 0) {
             return (false, 0);
@@ -592,10 +582,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     function setEpochDuration(
         uint256 _epochDuration
     ) external override onlyOwner {
-        require(
-            _epochDuration >= 1 days && _epochDuration <= 90 days,
-            "Invalid duration"
-        );
+        
 
         uint256 oldDuration = epochDuration;
         epochDuration = _epochDuration;

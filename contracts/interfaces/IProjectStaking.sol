@@ -226,6 +226,30 @@ interface IProjectStaking {
     function multiplierFactor() external view returns (uint256 factor);
 
     /**
+     * @dev Get the current minimum penalty rate for early unstaking
+     * @return rate The current minimum penalty rate (in basis points)
+     */
+    function minPenaltyRate() external view returns (uint256 rate);
+
+    /**
+     * @dev Get the current maximum penalty rate for early unstaking
+     * @return rate The current maximum penalty rate (in basis points)
+     */
+    function maxPenaltyRate() external view returns (uint256 rate);
+
+    /**
+     * @dev Update the minimum penalty rate for early unstaking
+     * @param _minPenaltyRate New minimum penalty rate (in basis points: 100 = 1%)
+     */
+    function setMinPenaltyRate(uint256 _minPenaltyRate) external;
+
+    /**
+     * @dev Update the maximum penalty rate for early unstaking
+     * @param _maxPenaltyRate New maximum penalty rate (in basis points: 100 = 1%)
+     */
+    function setMaxPenaltyRate(uint256 _maxPenaltyRate) external;
+
+    /**
      * @dev Duration parameter updated event
      */
     event LockDurationUpdated(
@@ -238,6 +262,15 @@ interface IProjectStaking {
      * @dev Multiplier factor updated event
      */
     event MultiplierFactorUpdated(uint256 oldValue, uint256 newValue);
+
+    /**
+     * @dev Penalty rate updated event
+     */
+    event PenaltyRateUpdated(
+        string rateType,
+        uint256 oldValue,
+        uint256 newValue
+    );
 
     /**
      * @dev Staking event
@@ -282,4 +315,28 @@ interface IProjectStaking {
      * @dev Emission controller updated event
      */
     event EmissionControllerUpdated(address indexed controller);
+
+    /**
+     * @dev Unstake tokens early with a penalty
+     * @param projectId ID of the project to unstake from
+     * @param stakeIndex Index of the stake to unstake
+     * @return penaltyAmount The amount of penalty paid
+     */
+    function earlyUnstake(
+        uint256 projectId,
+        uint256 stakeIndex
+    ) external returns (uint256 penaltyAmount);
+
+    /**
+     * @dev Early unstaking event
+     */
+    event EarlyUnstaked(
+        address indexed user,
+        uint256 indexed projectId,
+        uint256 amount,
+        uint256 score,
+        uint256 stakeIndex,
+        uint256 penaltyAmount,
+        uint256 remainingTime
+    );
 }

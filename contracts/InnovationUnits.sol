@@ -888,7 +888,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     function updateBuyFeePercentage(
         uint256 _buyFeePercentage
     ) external onlyOwner {
-        require(_buyFeePercentage <= 3000, "Fee too high: max 30%");
+        
         uint256 oldFee = buyFeePercentage;
         buyFeePercentage = _buyFeePercentage;
         emit FeeUpdated("buy", oldFee, _buyFeePercentage);
@@ -901,7 +901,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     function updateSellFeePercentage(
         uint256 _sellFeePercentage
     ) external onlyOwner {
-        require(_sellFeePercentage <= 3000, "Fee too high: max 30%");
+        
         uint256 oldFee = sellFeePercentage;
         sellFeePercentage = _sellFeePercentage;
         emit FeeUpdated("sell", oldFee, _sellFeePercentage);
@@ -991,5 +991,17 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         bytes memory data
     ) internal override(ERC1155Supply) {
         super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
+    }
+
+    /**
+     * @dev Get the actual total supply of minted tokens for a specific project
+     * @param projectId The project ID to query
+     * @return The total number of minted tokens in circulation for this project
+     */
+    function getTotalSupply(
+        uint256 projectId
+    ) external view projectExists(projectId) returns (uint256) {
+        // Use the built-in totalSupply function from ERC1155Supply
+        return totalSupply(projectId);
     }
 }

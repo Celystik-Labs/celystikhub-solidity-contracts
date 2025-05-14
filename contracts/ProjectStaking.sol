@@ -24,13 +24,15 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     uint256 public override maxLockDuration = 730 days; // ~2 years
     uint256 public constant SCORE_PRECISION = 1e12; // Precision for score calculations
 
+    // Early unstaking penalty rates (in basis points, upgradable)
+    uint256 public override maxPenaltyRate = 5000; // 50% in basis points
+    uint256 public override minPenaltyRate = 500; // 5% in basis points
+
     // Multiplier factor (upgradable) - controls how much the score scales with time
     // Default is 2.0, meaning stake score can reach up to 3x (1x base + 2x duration bonus)
     // Can be configured between 1 and 19, resulting in max multipliers from 2x to 20x
     uint256 public override multiplierFactor = 2 * SCORE_PRECISION;
-    uint256 public constant MIN_MULTIPLIER_FACTOR = 1 * SCORE_PRECISION; // 1x additional (2x max)
-    uint256 public constant MAX_MULTIPLIER_FACTOR = 19 * SCORE_PRECISION; // 19x additional (20x max)
-
+    
     // CEL token and InnovationUnits contract references
     IERC20 public celToken;
     IInnovationUnits public innovationUnits;
@@ -77,6 +79,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     // Mapping to check if a staker is already in the projectStakers array to prevent duplicates
     mapping(uint256 => mapping(address => bool)) public isProjectStaker;
 
+    
     /**
      * @dev Modifier to check if a project exists
      */
@@ -307,6 +310,152 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
             userStake.score,
             stakeIndex
         );
+    }
+
+    /**
+     * @dev Unstake tokens early with a penalty
+     * @param projectId ID of the project to unstake from
+     * @param stakeIndex Index of the stake to unstake
+     * @return penaltyAmount The amount of penalty paid
+     */
+    function earlyUnstake(
+        uint256 projectId,
+        uint256 stakeIndex
+    )
+        external
+        nonReentrant
+        projectExists(projectId)
+        returns (uint256 penaltyAmount)
+    {
+        require(
+            stakeIndex < projectUserStakes[projectId][msg.sender].length,
+            "Invalid stake index"
+        );
+
+        StakeInfo storage userStake = projectUserStakes[projectId][msg.sender][
+            stakeIndex
+        ];
+
+        require(userStake.isActive, "Stake is not active");
+        require(
+            block.timestamp < userStake.unlockTime,
+            "Use regular unstake for unlocked tokens"
+        );
+
+        // Calculate the penalty based on remaining time
+        uint256 remainingTime = userStake.unlockTime - block.timestamp;
+        uint256 originalLockDuration = userStake.lockDuration;
+
+        // Penalty scales from 50% to 5% based on remaining time
+        // 50% if unstaking immediately after staking
+        // 5% if unstaking right before unlock time
+        uint256 penaltyRate = maxPenaltyRate;
+        if (originalLockDuration > 0) {
+            // Linear penalty decrease: starts at maxPenaltyRate and ends at minPenaltyRate
+            penaltyRate =
+                maxPenaltyRate -
+                (((maxPenaltyRate - minPenaltyRate) *
+                    (originalLockDuration - remainingTime)) /
+                    originalLockDuration);
+        }
+
+        penaltyAmount = (userStake.amount * penaltyRate) / 10000;
+        uint256 returnAmount = userStake.amount - penaltyAmount;
+
+        // Mark stake as inactive
+        userStake.isActive = false;
+
+        // Update totals
+        userTotalStaked[msg.sender] = userTotalStaked[msg.sender].sub(
+            userStake.amount
+        );
+        userTotalScore[msg.sender] = userTotalScore[msg.sender].sub(
+            userStake.score
+        );
+
+        projectTotalStaked[projectId] = projectTotalStaked[projectId].sub(
+            userStake.amount
+        );
+        projectTotalScore[projectId] = projectTotalScore[projectId].sub(
+            userStake.score
+        );
+
+        totalStaked = totalStaked.sub(userStake.amount);
+        totalScore = totalScore.sub(userStake.score);
+
+        // Check if user still has any active stakes in this project
+        bool hasActiveStakes = false;
+        uint256[] memory indexes = userProjectStakeIndexes[msg.sender][
+            projectId
+        ];
+        for (uint256 i = 0; i < indexes.length; i++) {
+            if (
+                indexes[i] != stakeIndex &&
+                projectUserStakes[projectId][msg.sender][indexes[i]].isActive
+            ) {
+                hasActiveStakes = true;
+                break;
+            }
+        }
+
+        // If no more active stakes in this project, remove it from the user's staked projects
+        if (!hasActiveStakes) {
+            uint256 length = userStakedProjectIds[msg.sender].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (userStakedProjectIds[msg.sender][i] == projectId) {
+                    // Replace with the last element and pop
+                    userStakedProjectIds[msg.sender][i] = userStakedProjectIds[
+                        msg.sender
+                    ][length - 1];
+                    userStakedProjectIds[msg.sender].pop();
+                    break;
+                }
+            }
+        }
+
+        // Remove the staker from the projectStakers array if they have no more active stakes
+        if (!hasActiveStakes && isProjectStaker[projectId][msg.sender]) {
+            uint256 length = projectStakers[projectId].length;
+            for (uint256 i = 0; i < length; i++) {
+                if (projectStakers[projectId][i] == msg.sender) {
+                    // Replace with the last element and pop
+                    projectStakers[projectId][i] = projectStakers[projectId][
+                        length - 1
+                    ];
+                    projectStakers[projectId].pop();
+                    break;
+                }
+            }
+            isProjectStaker[projectId][msg.sender] = false;
+        }
+
+        // Transfer penalty to the InnovationUnits contract's project treasury
+        if (penaltyAmount > 0) {
+            // First approve the InnovationUnits contract to spend penalty amount of CEL tokens
+            celToken.approve(address(innovationUnits), penaltyAmount);
+
+            // Then call addLiquidity which will use safeTransferFrom to pull the tokens
+            // and properly update the project's treasury balance
+            innovationUnits.addLiquidity(projectId, penaltyAmount);
+        }
+
+        // Transfer remaining tokens back to user
+        if (returnAmount > 0) {
+            celToken.safeTransfer(msg.sender, returnAmount);
+        }
+
+        // Emit the early unstaking event
+        emit EarlyUnstaked(
+            msg.sender,
+            projectId,
+            userStake.amount,
+            userStake.score,
+            stakeIndex,
+            penaltyAmount,
+            remainingTime
+        );
+
+        return penaltyAmount;
     }
 
     /**
@@ -750,16 +899,47 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     function setMultiplierFactor(
         uint256 _multiplierFactor
     ) external override onlyOwner {
-        require(
-            _multiplierFactor >= MIN_MULTIPLIER_FACTOR &&
-                _multiplierFactor <= MAX_MULTIPLIER_FACTOR,
-            "Multiplier factor out of allowed range"
-        );
+        
 
         uint256 oldMultiplierFactor = multiplierFactor;
         multiplierFactor = _multiplierFactor;
 
         emit MultiplierFactorUpdated(oldMultiplierFactor, _multiplierFactor);
+    }
+
+    /**
+     * @dev Update the minimum penalty rate for early unstaking
+     * @param _minPenaltyRate New minimum penalty rate (in basis points: 100 = 1%)
+     */
+    function setMinPenaltyRate(
+        uint256 _minPenaltyRate
+    ) external override onlyOwner {
+        require(_minPenaltyRate <= 3000, "Min penalty rate too high: max 30%");
+        require(_minPenaltyRate < maxPenaltyRate, "Min must be less than max");
+
+        uint256 oldRate = minPenaltyRate;
+        minPenaltyRate = _minPenaltyRate;
+
+        emit PenaltyRateUpdated("min", oldRate, _minPenaltyRate);
+    }
+
+    /**
+     * @dev Update the maximum penalty rate for early unstaking
+     * @param _maxPenaltyRate New maximum penalty rate (in basis points: 100 = 1%)
+     */
+    function setMaxPenaltyRate(
+        uint256 _maxPenaltyRate
+    ) external override onlyOwner {
+        require(_maxPenaltyRate <= 7000, "Max penalty rate too high: max 70%");
+        require(
+            _maxPenaltyRate > minPenaltyRate,
+            "Max must be greater than min"
+        );
+
+        uint256 oldRate = maxPenaltyRate;
+        maxPenaltyRate = _maxPenaltyRate;
+
+        emit PenaltyRateUpdated("max", oldRate, _maxPenaltyRate);
     }
 
     /**
@@ -803,8 +983,4 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
 
         return (projectStakerList, amounts);
     }
-
-    /**
-     * @dev Multiplier factor updated event
-     */
 }

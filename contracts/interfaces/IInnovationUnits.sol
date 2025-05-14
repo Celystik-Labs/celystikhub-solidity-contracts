@@ -377,4 +377,11 @@ interface IInnovationUnits is IERC1155 {
      * @dev Emitted when the protocol treasury address is updated
      */
     event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
+
+    /**
+     * @dev Get the actual total supply of minted tokens for a specific project
+     * @param projectId The project ID to query
+     * @return The total number of minted tokens in circulation for this project
+     */
+    function getTotalSupply(uint256 projectId) external view returns (uint256);
 }
