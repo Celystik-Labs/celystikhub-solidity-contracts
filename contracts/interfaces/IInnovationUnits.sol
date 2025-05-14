@@ -19,6 +19,7 @@ interface IInnovationUnits is IERC1155 {
      * @param _creatorsAllocatedPercentage Percentage allocated to creators (in basis points)
      * @param _contributorsReservePercentage Percentage allocated to contributors (in basis points)
      * @param _investorsReservePercentage Percentage allocated to investors (in basis points)
+     * @param _projectName Name of the project
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
@@ -28,7 +29,8 @@ interface IInnovationUnits is IERC1155 {
         uint256[] memory _creatorShares,
         uint256 _creatorsAllocatedPercentage,
         uint256 _contributorsReservePercentage,
-        uint256 _investorsReservePercentage
+        uint256 _investorsReservePercentage,
+        string memory _projectName
     ) external returns (uint256 projectId);
 
     /**
@@ -46,7 +48,8 @@ interface IInnovationUnits is IERC1155 {
             uint256 creatorsAllocatedPercentage,
             uint256 contributorsReservePercentage,
             uint256 investorsReservePercentage,
-            uint256 treasuryBalance
+            uint256 treasuryBalance,
+            string memory name
         );
 
     /**
@@ -384,4 +387,13 @@ interface IInnovationUnits is IERC1155 {
      * @return The total number of minted tokens in circulation for this project
      */
     function getTotalSupply(uint256 projectId) external view returns (uint256);
+
+    /**
+     * @dev Returns the project name
+     * @param projectId The project ID to query
+     * @return name The name of the project
+     */
+    function getProjectName(
+        uint256 projectId
+    ) external view returns (string memory name);
 }

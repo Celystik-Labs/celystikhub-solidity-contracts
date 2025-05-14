@@ -1,8 +1,8 @@
 {
   "network": "optimismSepolia",
-  "timestamp": "2025-05-14T15:41:04.848Z",
+  "timestamp": "2025-05-14T15:48:15.417Z",
   "oldAddress": "0x2dA7e3a7F21cCE79efeb66f3b082196EA0A8B9Af",
-  "newAddress": "0xec784cf8802C0214BcE406987435a18d9693Add8",
+  "newAddress": "0x88496e898eBD8CE6B669741a2289153Ac4Ceae3e",
   "celToken": "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
   "protocolTreasury": "0x6041c54BeB1Df6d66E835Bc9e5096fe37EdbBCf5"
 }
