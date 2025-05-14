@@ -43,6 +43,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         uint256 creatorsAllocatedPercentage;
         uint256 contributorsReservePercentage;
         uint256 investorsReservePercentage;
+        string name;
         bool exists;
     }
 
@@ -198,6 +199,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
      * @param _creatorsAllocatedPercentage Percentage allocated to creators (in basis points)
      * @param _contributorsReservePercentage Percentage allocated to contributors (in basis points)
      * @param _investorsReservePercentage Percentage allocated to investors (in basis points)
+     * @param _projectName Name of the project
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
@@ -207,13 +209,15 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         uint256[] memory _creatorShares,
         uint256 _creatorsAllocatedPercentage,
         uint256 _contributorsReservePercentage,
-        uint256 _investorsReservePercentage
+        uint256 _investorsReservePercentage,
+        string memory _projectName
     ) external nonReentrant returns (uint256 projectId) {
         require(
             _creators.length == _creatorShares.length,
             "Creator arrays length mismatch"
         );
         require(_creators.length > 0, "At least one creator required");
+        require(bytes(_projectName).length > 0, "Project name cannot be empty");
 
         uint256 totalCreatorShares = 0;
         for (uint256 i = 0; i < _creatorShares.length; i++) {
@@ -237,6 +241,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             creatorsAllocatedPercentage: _creatorsAllocatedPercentage,
             contributorsReservePercentage: _contributorsReservePercentage,
             investorsReservePercentage: _investorsReservePercentage,
+            name: _projectName,
             exists: true
         });
 
@@ -646,7 +651,8 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             uint256 creatorsAllocatedPercentage,
             uint256 contributorsReservePercentage,
             uint256 investorsReservePercentage,
-            uint256 treasuryBalance
+            uint256 treasuryBalance,
+            string memory name
         )
     {
         ProjectData storage project = projects[projectId];
@@ -656,8 +662,20 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             project.creatorsAllocatedPercentage,
             project.contributorsReservePercentage,
             project.investorsReservePercentage,
-            projectTreasuryBalances[projectId]
+            projectTreasuryBalances[projectId],
+            project.name
         );
+    }
+
+    /**
+     * @dev Returns the project name
+     * @param projectId The project ID to query
+     * @return name The name of the project
+     */
+    function getProjectName(
+        uint256 projectId
+    ) external view projectExists(projectId) returns (string memory name) {
+        return projects[projectId].name;
     }
 
     /**
@@ -888,7 +906,6 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     function updateBuyFeePercentage(
         uint256 _buyFeePercentage
     ) external onlyOwner {
-        
         uint256 oldFee = buyFeePercentage;
         buyFeePercentage = _buyFeePercentage;
         emit FeeUpdated("buy", oldFee, _buyFeePercentage);
@@ -901,7 +918,6 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     function updateSellFeePercentage(
         uint256 _sellFeePercentage
     ) external onlyOwner {
-        
         uint256 oldFee = sellFeePercentage;
         sellFeePercentage = _sellFeePercentage;
         emit FeeUpdated("sell", oldFee, _sellFeePercentage);
