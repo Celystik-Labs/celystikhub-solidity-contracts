@@ -7,12 +7,12 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
  * @title IInnovationUnits
  * @dev Interface for the Innovation Units (IUs) ERC-1155 token contract
  * Each token ID represents a different project
+ * All projects use a fixed total supply (default: 100,000) which can be updated by the owner
  */
 interface IInnovationUnits is IERC1155 {
     /**
      * @dev Creates a new project and assigns a unique token ID for its IUs
      * Automatically mints tokens to creators based on their shares
-     * @param _totalSupply Total supply of Innovation Units for this project
      * @param _initialPrice Initial price per IU in wei
      * @param _creators Array of creator addresses
      * @param _creatorShares Array of creator shares (in percentage of creator allocation)
@@ -23,7 +23,6 @@ interface IInnovationUnits is IERC1155 {
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
-        uint256 _totalSupply,
         uint256 _initialPrice,
         address[] memory _creators,
         uint256[] memory _creatorShares,
@@ -430,4 +429,16 @@ interface IInnovationUnits is IERC1155 {
             uint256[] memory investorAmountValues,
             uint256[] memory investorBalances
         );
+
+    /**
+     * @dev Update the Innovation Units total supply for all projects
+     * @param _newTotalSupply New total supply value
+     */
+    function updateInnovationUnitsTotalSupply(uint256 _newTotalSupply) external;
+
+    /**
+     * @dev Get the Innovation Units total supply used for new projects
+     * @return The Innovation Units total supply value
+     */
+    function getInnovationUnitsTotalSupply() external view returns (uint256);
 }

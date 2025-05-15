@@ -26,6 +26,9 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     // Project counter for generating unique IDs
     uint256 private _projectCounter = 0;
 
+    // Global total supply for all projects
+    uint256 public innovationUnitsTotalSupply = 100000;
+
     // CEL token reference
     IERC20 public celToken;
 
@@ -120,6 +123,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         uint256 amount
     );
     event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
+    event InnovationUnitsTotalSupplyUpdated(uint256 oldValue, uint256 newValue);
 
     /**
      * @dev Constructor
@@ -192,7 +196,6 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     /**
      * @dev Creates a new project and assigns a unique token ID for its IUs
      * Also automatically mints tokens to creators based on their shares
-     * @param _totalSupply Total supply of Innovation Units for this project
      * @param _initialPrice Initial price per IU in wei
      * @param _creators Array of creator addresses
      * @param _creatorShares Array of creator shares (in percentage of creator allocation)
@@ -203,7 +206,6 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
      * @return projectId The project ID (token ID) assigned to the new project
      */
     function createProject(
-        uint256 _totalSupply,
         uint256 _initialPrice,
         address[] memory _creators,
         uint256[] memory _creatorShares,
@@ -236,7 +238,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         // Store project data
         projects[projectId] = ProjectData({
             projectId: projectId,
-            totalSupply: _totalSupply,
+            totalSupply: innovationUnitsTotalSupply, // Use global total supply
             initialPrice: _initialPrice,
             creatorsAllocatedPercentage: _creatorsAllocatedPercentage,
             contributorsReservePercentage: _contributorsReservePercentage,
@@ -254,7 +256,11 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             creatorShares[projectId][_creators[i]] = _creatorShares[i];
         }
 
-        emit ProjectRegistered(projectId, msg.sender, _totalSupply);
+        emit ProjectRegistered(
+            projectId,
+            msg.sender,
+            innovationUnitsTotalSupply
+        );
 
         // Automatically mint tokens to creators
         _mintToCreators(projectId);
@@ -1106,5 +1112,28 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
             investorAmountValues,
             investorBalances
         );
+    }
+
+    /**
+     * @dev Update the Innovation Units total supply for all projects
+     * @param _newTotalSupply New total supply value
+     */
+    function updateInnovationUnitsTotalSupply(
+        uint256 _newTotalSupply
+    ) external onlyOwner {
+        require(_newTotalSupply > 0, "Total supply must be greater than 0");
+
+        uint256 oldValue = innovationUnitsTotalSupply;
+        innovationUnitsTotalSupply = _newTotalSupply;
+
+        emit InnovationUnitsTotalSupplyUpdated(oldValue, _newTotalSupply);
+    }
+
+    /**
+     * @dev Get the Innovation Units total supply used for new projects
+     * @return The Innovation Units total supply value
+     */
+    function getInnovationUnitsTotalSupply() external view returns (uint256) {
+        return innovationUnitsTotalSupply;
     }
 }

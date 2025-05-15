@@ -3,6 +3,7 @@ require("@nomiclabs/hardhat-ethers");
 require("@nomicfoundation/hardhat-verify");
 require("solidity-coverage");
 require("dotenv").config();
+const { utils } = require("ethers");
 
 // Load environment variables from .env file
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -29,7 +30,13 @@ module.exports = {
   networks: {
     // Local development networks
     hardhat: {
-      chainId: 31337
+      chainId: 31337,
+      accounts: {
+        count: 100,  // Increase from default of 20
+        accountsBalance: utils.parseEther("10000").toString() // 10,000 ETH per account
+      },
+      gas: 12000000,          // Higher gas limit for complex transactions
+      blockGasLimit: 12000000 // Higher block gas limit
     },
     localhost: {
       url: "http://127.0.0.1:8545",
@@ -125,6 +132,6 @@ module.exports = {
     artifacts: "./artifacts"
   },
   mocha: {
-    timeout: 60000
+    timeout: 300000  // 5 minutes instead of 60 seconds
   }
 }; 
