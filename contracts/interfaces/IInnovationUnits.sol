@@ -396,4 +396,38 @@ interface IInnovationUnits is IERC1155 {
     function getProjectName(
         uint256 projectId
     ) external view returns (string memory name);
+
+    /**
+     * @dev Get all innovators (creators, contributors, investors) for a specific project,
+     * separated by category to maintain distinct roles.
+     * @param projectId The project ID to query
+     * @return creatorAddresses Array of creator addresses
+     * @return creatorShareValues Array of shares for each creator
+     * @return creatorBalances Current IU balance for each creator
+     * @return contributorAddresses Array of contributor addresses
+     * @return contributorAmountValues Amount of IUs originally granted to each contributor
+     * @return contributorBalances Current IU balance for each contributor
+     * @return investorAddresses Array of investor addresses
+     * @return investorAmountValues Amount of IUs originally purchased by each investor
+     * @return investorBalances Current IU balance for each investor
+     */
+    function getAllProjectInnovators(
+        uint256 projectId
+    )
+        external
+        view
+        returns (
+            // Creators data
+            address[] memory creatorAddresses,
+            uint256[] memory creatorShareValues,
+            uint256[] memory creatorBalances,
+            // Contributors data
+            address[] memory contributorAddresses,
+            uint256[] memory contributorAmountValues,
+            uint256[] memory contributorBalances,
+            // Investors data
+            address[] memory investorAddresses,
+            uint256[] memory investorAmountValues,
+            uint256[] memory investorBalances
+        );
 }

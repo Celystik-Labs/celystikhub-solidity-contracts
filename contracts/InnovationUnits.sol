@@ -1020,4 +1020,91 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
         // Use the built-in totalSupply function from ERC1155Supply
         return totalSupply(projectId);
     }
+
+    /**
+     * @dev Get all innovators (creators, contributors, investors) for a specific project,
+     * separated by category to maintain distinct roles.
+     * @param projectId The project ID to query
+     * @return creatorAddresses Array of creator addresses
+     * @return creatorShareValues Array of shares for each creator
+     * @return creatorBalances Current IU balance for each creator
+     * @return contributorAddresses Array of contributor addresses
+     * @return contributorAmountValues Amount of IUs originally granted to each contributor
+     * @return contributorBalances Current IU balance for each contributor
+     * @return investorAddresses Array of investor addresses
+     * @return investorAmountValues Amount of IUs originally purchased by each investor
+     * @return investorBalances Current IU balance for each investor
+     */
+    function getAllProjectInnovators(
+        uint256 projectId
+    )
+        external
+        view
+        projectExists(projectId)
+        returns (
+            // Creators data
+            address[] memory creatorAddresses,
+            uint256[] memory creatorShareValues,
+            uint256[] memory creatorBalances,
+            // Contributors data
+            address[] memory contributorAddresses,
+            uint256[] memory contributorAmountValues,
+            uint256[] memory contributorBalances,
+            // Investors data
+            address[] memory investorAddresses,
+            uint256[] memory investorAmountValues,
+            uint256[] memory investorBalances
+        )
+    {
+        // Get all creators for this project
+        creatorAddresses = projectCreators[projectId];
+        creatorShareValues = new uint256[](creatorAddresses.length);
+        creatorBalances = new uint256[](creatorAddresses.length);
+
+        for (uint256 i = 0; i < creatorAddresses.length; i++) {
+            creatorShareValues[i] = creatorShares[projectId][
+                creatorAddresses[i]
+            ];
+            creatorBalances[i] = balanceOf(creatorAddresses[i], projectId);
+        }
+
+        // Get all contributors for this project
+        contributorAddresses = projectContributors[projectId];
+        contributorAmountValues = new uint256[](contributorAddresses.length);
+        contributorBalances = new uint256[](contributorAddresses.length);
+
+        for (uint256 i = 0; i < contributorAddresses.length; i++) {
+            contributorAmountValues[i] = contributorAmounts[projectId][
+                contributorAddresses[i]
+            ];
+            contributorBalances[i] = balanceOf(
+                contributorAddresses[i],
+                projectId
+            );
+        }
+
+        // Get all investors for this project
+        investorAddresses = projectInvestors[projectId];
+        investorAmountValues = new uint256[](investorAddresses.length);
+        investorBalances = new uint256[](investorAddresses.length);
+
+        for (uint256 i = 0; i < investorAddresses.length; i++) {
+            investorAmountValues[i] = investorAmounts[projectId][
+                investorAddresses[i]
+            ];
+            investorBalances[i] = balanceOf(investorAddresses[i], projectId);
+        }
+
+        return (
+            creatorAddresses,
+            creatorShareValues,
+            creatorBalances,
+            contributorAddresses,
+            contributorAmountValues,
+            contributorBalances,
+            investorAddresses,
+            investorAmountValues,
+            investorBalances
+        );
+    }
 }
