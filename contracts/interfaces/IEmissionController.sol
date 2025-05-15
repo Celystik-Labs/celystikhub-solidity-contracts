@@ -150,10 +150,12 @@ interface IEmissionController {
      * @dev Update emission shares between stakers and IU holders
      * @param _stakingShare New share for stakers
      * @param _iuHoldersShare New share for IU holders
+     * @param _projectTreasuryShare New share for project treasury
      */
     function setEmissionShares(
         uint256 _stakingShare,
-        uint256 _iuHoldersShare
+        uint256 _iuHoldersShare,
+        uint256 _projectTreasuryShare
     ) external;
 
     /**
@@ -187,6 +189,7 @@ interface IEmissionController {
      * @return totalEmissions Total emissions for the project in this epoch
      * @return stakingEmissions Emissions allocated to stakers
      * @return iuHolderEmissions Emissions allocated to IU holders
+     * @return treasuryEmissions Emissions allocated to project treasury
      */
     function getEpochProjectEmissions(
         uint256 epochNumber,
@@ -197,8 +200,20 @@ interface IEmissionController {
         returns (
             uint256 totalEmissions,
             uint256 stakingEmissions,
-            uint256 iuHolderEmissions
+            uint256 iuHolderEmissions,
+            uint256 treasuryEmissions
         );
+
+    /**
+     * @dev Manually add project treasury emissions for a specific epoch and project
+     * This function can be used if automatic addition fails for some reason
+     * @param epochNumber The epoch number to add treasury emissions for
+     * @param projectId The project ID to add treasury emissions for
+     */
+    function manuallyAddProjectTreasuryEmissions(
+        uint256 epochNumber,
+        uint256 projectId
+    ) external;
 
     // Events
 
@@ -229,7 +244,8 @@ interface IEmissionController {
         uint256 indexed projectId,
         uint256 totalEmissions,
         uint256 stakingEmissions,
-        uint256 iuHolderEmissions
+        uint256 iuHolderEmissions,
+        uint256 treasuryEmissions
     );
 
     /**
@@ -275,10 +291,23 @@ interface IEmissionController {
     /**
      * @dev Emitted when emission shares are updated
      */
-    event EmissionSharesUpdated(uint256 stakingShare, uint256 iuHoldersShare);
+    event EmissionSharesUpdated(
+        uint256 stakingShare,
+        uint256 iuHoldersShare,
+        uint256 projectTreasuryShare
+    );
 
     /**
      * @dev Emitted when tokens are minted for an epoch's emissions
      */
     event EpochTokensMinted(uint256 indexed epochNumber, uint256 amount);
+
+    /**
+     * @dev Emitted when project treasury emissions are added to the project treasury
+     */
+    event ProjectTreasuryEmissionsAdded(
+        uint256 indexed epochNumber,
+        uint256 indexed projectId,
+        uint256 amount
+    );
 }

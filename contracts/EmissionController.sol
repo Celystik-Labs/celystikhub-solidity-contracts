@@ -35,8 +35,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // Emission distribution parameters
     uint256 public stakingEmissionShare = 2000; // Default 20%
-    uint256 public iuHoldersEmissionShare = 8000; // Default 80%
-    
+    uint256 public iuHoldersEmissionShare = 6000; // Default 60%
+    uint256 public projectTreasuryEmissionShare = 2000; // Default 20%
 
     // Epoch tracking
     uint256 public currentEpoch = 0;
@@ -61,6 +61,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         public epochProjectStakingEmissions;
     mapping(uint256 => mapping(uint256 => uint256))
         public epochProjectIUHolderEmissions;
+    mapping(uint256 => mapping(uint256 => uint256))
+        public epochProjectTreasuryEmissions;
 
     // Claim tracking
     mapping(uint256 => mapping(uint256 => mapping(address => bool)))
@@ -69,6 +71,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         public hasClaimedIUHolderEmissions;
 
     // All events are defined in the IEmissionController interface
+
 
     /**
      * @dev Constructor
@@ -163,6 +166,9 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
                 uint256 projectIUHolderEmissions = projectEmissions
                     .mul(iuHoldersEmissionShare)
                     .div(PRECISION);
+                uint256 projectTreasuryEmissions = projectEmissions
+                    .mul(projectTreasuryEmissionShare)
+                    .div(PRECISION);
 
                 // Store emissions data
                 epochProjectEmissions[currentEpoch][
@@ -174,6 +180,9 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
                 epochProjectIUHolderEmissions[currentEpoch][
                     projectId
                 ] = projectIUHolderEmissions;
+                epochProjectTreasuryEmissions[currentEpoch][
+                    projectId
+                ] = projectTreasuryEmissions;
 
                 totalAllocatedEmissions = totalAllocatedEmissions.add(
                     projectEmissions
@@ -184,7 +193,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
                     projectId,
                     projectEmissions,
                     projectStakingEmissions,
-                    projectIUHolderEmissions
+                    projectIUHolderEmissions,
+                    projectTreasuryEmissions
                 );
             }
         }
@@ -197,9 +207,82 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
             );
             require(success, "Failed to mint CEL tokens for epoch emissions");
             emit EpochTokensMinted(currentEpoch, totalAllocatedEmissions);
+
+            // Automatically add project treasury emissions to each project treasury
+            addProjectTreasuryEmissions(currentEpoch);
         }
 
         emit EpochProcessed(currentEpoch, totalAllocatedEmissions);
+    }
+
+    /**
+     * @dev Helper function to automatically add project treasury emissions to project treasuries
+     * @param epochNumber The epoch number to process treasury emissions for
+     */
+    function addProjectTreasuryEmissions(uint256 epochNumber) internal {
+        uint256 totalProjects = innovationUnits.getTotalProjects();
+
+        for (uint256 projectId = 0; projectId < totalProjects; projectId++) {
+            if (innovationUnits.projectIdExists(projectId)) {
+                uint256 treasuryEmissions = epochProjectTreasuryEmissions[
+                    epochNumber
+                ][projectId];
+
+                if (treasuryEmissions > 0) {
+                    // Approve the InnovationUnits contract to spend the treasury emissions
+                    celToken.approve(
+                        address(innovationUnits),
+                        treasuryEmissions
+                    );
+
+                    // Call the addLiquidity function to add emissions to project treasury
+                    innovationUnits.addLiquidity(projectId, treasuryEmissions);
+
+                    emit ProjectTreasuryEmissionsAdded(
+                        epochNumber,
+                        projectId,
+                        treasuryEmissions
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * @dev Manually add project treasury emissions for a specific epoch and project
+     * This function can be used if automatic addition fails for some reason
+     * @param epochNumber The epoch number to add treasury emissions for
+     * @param projectId The project ID to add treasury emissions for
+     */
+    function manuallyAddProjectTreasuryEmissions(
+        uint256 epochNumber,
+        uint256 projectId
+    ) external onlyOwner nonReentrant {
+        require(
+            epochNumber > 0 && epochNumber <= currentEpoch,
+            "Invalid epoch"
+        );
+        require(
+            innovationUnits.projectIdExists(projectId),
+            "Project does not exist"
+        );
+
+        uint256 treasuryEmissions = epochProjectTreasuryEmissions[epochNumber][
+            projectId
+        ];
+        require(treasuryEmissions > 0, "No treasury emissions to add");
+
+        // Approve the InnovationUnits contract to spend the treasury emissions
+        celToken.approve(address(innovationUnits), treasuryEmissions);
+
+        // Call the addLiquidity function to add emissions to project treasury
+        innovationUnits.addLiquidity(projectId, treasuryEmissions);
+
+        emit ProjectTreasuryEmissionsAdded(
+            epochNumber,
+            projectId,
+            treasuryEmissions
+        );
     }
 
     /**
@@ -551,6 +634,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      * @return totalEmissions Total emissions for the project in this epoch
      * @return stakingEmissions Emissions allocated to stakers
      * @return iuHolderEmissions Emissions allocated to IU holders
+     * @return treasuryEmissions Emissions allocated to project treasury
      */
     function getEpochProjectEmissions(
         uint256 epochNumber,
@@ -562,7 +646,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         returns (
             uint256 totalEmissions,
             uint256 stakingEmissions,
-            uint256 iuHolderEmissions
+            uint256 iuHolderEmissions,
+            uint256 treasuryEmissions
         )
     {
         totalEmissions = epochProjectEmissions[epochNumber][projectId];
@@ -570,8 +655,16 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         iuHolderEmissions = epochProjectIUHolderEmissions[epochNumber][
             projectId
         ];
+        treasuryEmissions = epochProjectTreasuryEmissions[epochNumber][
+            projectId
+        ];
 
-        return (totalEmissions, stakingEmissions, iuHolderEmissions);
+        return (
+            totalEmissions,
+            stakingEmissions,
+            iuHolderEmissions,
+            treasuryEmissions
+        );
     }
 
     // Configuration functions
@@ -583,8 +676,6 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     function setEpochDuration(
         uint256 _epochDuration
     ) external override onlyOwner {
-        
-
         uint256 oldDuration = epochDuration;
         epochDuration = _epochDuration;
 
@@ -651,20 +742,28 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
      * @dev Update emission shares between stakers and IU holders
      * @param _stakingShare New share for stakers
      * @param _iuHoldersShare New share for IU holders
+     * @param _projectTreasuryShare New share for project treasury
      */
     function setEmissionShares(
         uint256 _stakingShare,
-        uint256 _iuHoldersShare
+        uint256 _iuHoldersShare,
+        uint256 _projectTreasuryShare
     ) external override onlyOwner {
         require(
-            _stakingShare.add(_iuHoldersShare) == PRECISION,
+            _stakingShare.add(_iuHoldersShare).add(_projectTreasuryShare) ==
+                PRECISION,
             "Shares must sum to 100%"
         );
 
         stakingEmissionShare = _stakingShare;
         iuHoldersEmissionShare = _iuHoldersShare;
+        projectTreasuryEmissionShare = _projectTreasuryShare;
 
-        emit EmissionSharesUpdated(_stakingShare, _iuHoldersShare);
+        emit EmissionSharesUpdated(
+            _stakingShare,
+            _iuHoldersShare,
+            _projectTreasuryShare
+        );
     }
 
     /**
