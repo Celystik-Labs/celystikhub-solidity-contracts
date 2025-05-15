@@ -25,7 +25,7 @@ contract ProjectStaking is IProjectStaking, Ownable, ReentrancyGuard {
     uint256 public constant SCORE_PRECISION = 1e12; // Precision for score calculations
 
     // Early unstaking penalty rates (in basis points, upgradable)
-    uint256 public override maxPenaltyRate = 5000; // 50% in basis points
+    uint256 public override maxPenaltyRate = 2000; // 50% in basis points
     uint256 public override minPenaltyRate = 500; // 5% in basis points
 
     // Multiplier factor (upgradable) - controls how much the score scales with time

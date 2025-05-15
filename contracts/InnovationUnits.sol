@@ -71,7 +71,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
 
     // Fee settings
     uint256 public buyFeePercentage = 500; // 5% buy fee (in basis points)
-    uint256 public sellFeePercentage = 2000; // 20% sell fee (in basis points)
+    uint256 public sellFeePercentage = 500; // 20% sell fee (in basis points)
 
     // Project registration event
     event ProjectRegistered(

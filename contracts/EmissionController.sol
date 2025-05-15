@@ -30,12 +30,13 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     uint256 public maxEmissionsPerEpoch = 100000 * 1e18; // Default max emissions: 100,000 CEL
 
     // Weight parameters
-    uint256 public globalStakingScoreWeight = 5000; // Default 50%
-    uint256 public globalMetricsScoreWeight = 5000; // Default 50%
+    uint256 public globalStakingScoreWeight = 10000; // Default 50%
+    uint256 public globalMetricsScoreWeight = 0; // Default 50%
 
     // Emission distribution parameters
     uint256 public stakingEmissionShare = 2000; // Default 20%
     uint256 public iuHoldersEmissionShare = 8000; // Default 80%
+    
 
     // Epoch tracking
     uint256 public currentEpoch = 0;

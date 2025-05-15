@@ -2,39 +2,39 @@
   "network": "optimismSepolia",
   "chainId": 11155420,
   "deployer": "0x267b6933Afb44989fb8230E60D5D90baE6511F43",
-  "timestamp": "2025-05-14T11:08:29.119Z",
+  "timestamp": "2025-05-14T19:55:23.749Z",
   "contracts": {
     "CELToken": {
       "address": "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
       "reused": true
     },
     "ProtocolTreasury": {
-      "address": "0x6041c54BeB1Df6d66E835Bc9e5096fe37EdbBCf5",
+      "address": "0x1C7A0712a6e16920A64Ea716a84244B0e74C50F4",
       "constructorArgs": [
         "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6"
       ]
     },
     "InnovationUnits": {
-      "address": "0x611d11ca257Da946da3E287C007b2618594e5b14",
+      "address": "0x4BF32554D29c81c3b81109c9DB09Ec0923A5A340",
       "constructorArgs": [
         "https://api.celystikhub.com/metadata/{id}",
         "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
-        "0x6041c54BeB1Df6d66E835Bc9e5096fe37EdbBCf5"
+        "0x1C7A0712a6e16920A64Ea716a84244B0e74C50F4"
       ]
     },
     "ProjectStaking": {
-      "address": "0x4d38F5780fB5dbf86230D21b93827cfE38eEB3B6",
+      "address": "0x17b4871d9149eA7C88d3733BA201775DebbADEeE",
       "constructorArgs": [
         "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
-        "0x611d11ca257Da946da3E287C007b2618594e5b14"
+        "0x4BF32554D29c81c3b81109c9DB09Ec0923A5A340"
       ]
     },
     "EmissionController": {
-      "address": "0xc1432f2F9D358CB99E1c7E4749eAc1C2Fce829cB",
+      "address": "0xf88FA855f5776e22ceED7255E51F86b5f7de176b",
       "constructorArgs": [
         "0xA9D722bcF7728D73790ab1d1dff2Bc681c032ba6",
-        "0x4d38F5780fB5dbf86230D21b93827cfE38eEB3B6",
-        "0x611d11ca257Da946da3E287C007b2618594e5b14"
+        "0x17b4871d9149eA7C88d3733BA201775DebbADEeE",
+        "0x4BF32554D29c81c3b81109c9DB09Ec0923A5A340"
       ]
     }
   }
