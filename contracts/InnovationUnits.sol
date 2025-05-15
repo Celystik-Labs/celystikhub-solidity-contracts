@@ -24,7 +24,7 @@ contract InnovationUnits is ERC1155Supply, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // Project counter for generating unique IDs
-    uint256 private _projectCounter = 0;
+    uint256 private _projectCounter = 1;
 
     // Global total supply for all projects
     uint256 public innovationUnitsTotalSupply = 100000;
