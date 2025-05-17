@@ -26,8 +26,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
 
     // Configurable parameters
     uint256 public epochDuration = 30 days; // Default epoch duration: 30 days
-    uint256 public baseEmissionsPerEpoch = 10000 * 1e18; // Default base emissions: 10,000 CEL
-    uint256 public maxEmissionsPerEpoch = 100000 * 1e18; // Default max emissions: 100,000 CEL
+    uint256 public emissionsPerEpoch = 10000 * 1e18; // Default constant emissions: 10,000 CEL
+    // Removing baseEmissionsPerEpoch and maxEmissionsPerEpoch since emissions are now constant
 
     // Weight parameters
     uint256 public globalStakingScoreWeight = 10000; // Default 50%
@@ -71,7 +71,6 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
         public hasClaimedIUHolderEmissions;
 
     // All events are defined in the IEmissionController interface
-
 
     /**
      * @dev Constructor
@@ -134,8 +133,8 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
             globalMetricsScore
         );
 
-        // Calculate total emissions for this epoch
-        uint256 totalEmissions = calculateTotalEmissions(globalImpactScore);
+        // Use constant emissions for this epoch
+        uint256 totalEmissions = emissionsPerEpoch;
         epochTotalEmissions[currentEpoch] = totalEmissions;
 
         // Calculate emissions for each project
@@ -257,7 +256,7 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     function manuallyAddProjectTreasuryEmissions(
         uint256 epochNumber,
         uint256 projectId
-    ) external onlyOwner nonReentrant {
+    ) external override onlyOwner nonReentrant {
         require(
             epochNumber > 0 && epochNumber <= currentEpoch,
             "Invalid epoch"
@@ -319,38 +318,6 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
                 .mul(globalStakingScoreWeight)
                 .add(_projectMetricsScore.mul(globalMetricsScoreWeight))
                 .div(PRECISION);
-    }
-
-    /**
-     * @dev Calculate total emissions for the epoch based on impact score
-     * @param _globalImpactScore The global impact score
-     * @return The calculated total emissions
-     */
-    function calculateTotalEmissions(
-        uint256 _globalImpactScore
-    ) public view override returns (uint256) {
-        // Simple linear model for now; can be enhanced with more sophisticated models
-        // Start with baseEmissions, scale up with impact score, cap at maxEmissions
-
-        // If impact score is 0, return base emissions
-        if (_globalImpactScore == 0) {
-            return baseEmissionsPerEpoch;
-        }
-
-        // Simple scaling based on impact score with artificial ceiling of max emissions
-        uint256 calculatedEmissions = baseEmissionsPerEpoch;
-
-        // For example, add 1 CEL per 1000 impact score points
-        calculatedEmissions = calculatedEmissions.add(
-            _globalImpactScore.div(1000)
-        );
-
-        // Cap at max emissions
-        if (calculatedEmissions > maxEmissionsPerEpoch) {
-            return maxEmissionsPerEpoch;
-        }
-
-        return calculatedEmissions;
     }
 
     /**
@@ -683,39 +650,18 @@ contract EmissionController is IEmissionController, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Update base emissions per epoch
-     * @param _baseEmissions New base emissions per epoch
+     * @dev Update emissions per epoch
+     * @param _emissionsPerEpoch New constant emissions per epoch
      */
-    function setBaseEmissionsPerEpoch(
-        uint256 _baseEmissions
+    function setEmissionsPerEpoch(
+        uint256 _emissionsPerEpoch
     ) external override onlyOwner {
-        require(
-            _baseEmissions > 0 && _baseEmissions <= maxEmissionsPerEpoch,
-            "Invalid amount"
-        );
+        require(_emissionsPerEpoch > 0, "Invalid amount");
 
-        uint256 oldEmissions = baseEmissionsPerEpoch;
-        baseEmissionsPerEpoch = _baseEmissions;
+        uint256 oldEmissions = emissionsPerEpoch;
+        emissionsPerEpoch = _emissionsPerEpoch;
 
-        emit BaseEmissionsUpdated(oldEmissions, _baseEmissions);
-    }
-
-    /**
-     * @dev Update maximum emissions per epoch
-     * @param _maxEmissions New maximum emissions per epoch
-     */
-    function setMaxEmissionsPerEpoch(
-        uint256 _maxEmissions
-    ) external override onlyOwner {
-        require(
-            _maxEmissions >= baseEmissionsPerEpoch,
-            "Must be >= base emissions"
-        );
-
-        uint256 oldEmissions = maxEmissionsPerEpoch;
-        maxEmissionsPerEpoch = _maxEmissions;
-
-        emit MaxEmissionsUpdated(oldEmissions, _maxEmissions);
+        emit EmissionsPerEpochUpdated(oldEmissions, _emissionsPerEpoch);
     }
 
     /**

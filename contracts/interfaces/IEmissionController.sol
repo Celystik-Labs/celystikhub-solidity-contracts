@@ -49,15 +49,6 @@ interface IEmissionController {
     ) external view returns (uint256);
 
     /**
-     * @dev Calculate total emissions for the epoch based on impact score
-     * @param _globalImpactScore The global impact score
-     * @return The calculated total emissions
-     */
-    function calculateTotalEmissions(
-        uint256 _globalImpactScore
-    ) external view returns (uint256);
-
-    /**
      * @dev Set metrics score for a project (placeholder for now)
      * @param projectId The project ID
      * @param score The metrics score to set
@@ -125,16 +116,10 @@ interface IEmissionController {
     function setEpochDuration(uint256 _epochDuration) external;
 
     /**
-     * @dev Update base emissions per epoch
-     * @param _baseEmissions New base emissions per epoch
+     * @dev Update emissions per epoch
+     * @param _emissionsPerEpoch New constant emissions per epoch
      */
-    function setBaseEmissionsPerEpoch(uint256 _baseEmissions) external;
-
-    /**
-     * @dev Update maximum emissions per epoch
-     * @param _maxEmissions New maximum emissions per epoch
-     */
-    function setMaxEmissionsPerEpoch(uint256 _maxEmissions) external;
+    function setEmissionsPerEpoch(uint256 _emissionsPerEpoch) external;
 
     /**
      * @dev Update global weights for staking and metrics scores
@@ -274,14 +259,9 @@ interface IEmissionController {
     event EpochDurationUpdated(uint256 oldDuration, uint256 newDuration);
 
     /**
-     * @dev Emitted when base emissions are updated
+     * @dev Emitted when emissions per epoch are updated
      */
-    event BaseEmissionsUpdated(uint256 oldEmissions, uint256 newEmissions);
-
-    /**
-     * @dev Emitted when max emissions are updated
-     */
-    event MaxEmissionsUpdated(uint256 oldEmissions, uint256 newEmissions);
+    event EmissionsPerEpochUpdated(uint256 oldEmissions, uint256 newEmissions);
 
     /**
      * @dev Emitted when global weights are updated
