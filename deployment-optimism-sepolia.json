@@ -1,44 +1,44 @@
 {
-  "network": "optimismSepolia",
-  "chainId": 11155420,
+  "network": "bnbTestnet",
+  "chainId": 97,
   "deployer": "0x267b6933Afb44989fb8230E60D5D90baE6511F43",
-  "timestamp": "2025-05-17T11:49:45.092Z",
+  "timestamp": "2025-06-10T05:57:44.377Z",
   "contracts": {
     "CELToken": {
-      "address": "0x8A5b853a3B5Ef20b4552F39a9F5a0EF4391dae3a",
+      "address": "0x09841D2442e7B62Ab41627daF52defb76c7C8178",
       "constructorArgs": [
         "Celystik Token",
         "CEL",
-        "10000000000000000000000000000000000"
+        "1000000000000000000000000"
       ]
     },
     "ProtocolTreasury": {
-      "address": "0x327E1b4206f710A2931ecC659Bf11b347C110cE0",
+      "address": "0x2cfAF612Cd982A6F067e487256A3c13B82F9BCb7",
       "constructorArgs": [
-        "0x8A5b853a3B5Ef20b4552F39a9F5a0EF4391dae3a"
+        "0x09841D2442e7B62Ab41627daF52defb76c7C8178"
       ]
     },
     "InnovationUnits": {
-      "address": "0x125B9569f3Ecdf9D79E7545a38E34AA28bDfB647",
+      "address": "0xD1f6972C40af870364d3a7240cFa48353978e56F",
       "constructorArgs": [
         "https://api.celystikhub.com/metadata/{id}",
-        "0x8A5b853a3B5Ef20b4552F39a9F5a0EF4391dae3a",
-        "0x327E1b4206f710A2931ecC659Bf11b347C110cE0"
+        "0x09841D2442e7B62Ab41627daF52defb76c7C8178",
+        "0x2cfAF612Cd982A6F067e487256A3c13B82F9BCb7"
       ]
     },
     "ProjectStaking": {
-      "address": "0x814230955F0a2202b5096Aa3834b791A427eD860",
+      "address": "0x2280425dB7FB5F02059667a74Bc97A9E6303a568",
       "constructorArgs": [
-        "0x8A5b853a3B5Ef20b4552F39a9F5a0EF4391dae3a",
-        "0x125B9569f3Ecdf9D79E7545a38E34AA28bDfB647"
+        "0x09841D2442e7B62Ab41627daF52defb76c7C8178",
+        "0xD1f6972C40af870364d3a7240cFa48353978e56F"
       ]
     },
     "EmissionController": {
-      "address": "0xa5288b733A2c48587f8CcceEaDEfCC03F791a674",
+      "address": "0x64F21745e9e859e91127e1DCE3c223aeFa8a9305",
       "constructorArgs": [
-        "0x8A5b853a3B5Ef20b4552F39a9F5a0EF4391dae3a",
-        "0x814230955F0a2202b5096Aa3834b791A427eD860",
-        "0x125B9569f3Ecdf9D79E7545a38E34AA28bDfB647"
+        "0x09841D2442e7B62Ab41627daF52defb76c7C8178",
+        "0x2280425dB7FB5F02059667a74Bc97A9E6303a568",
+        "0xD1f6972C40af870364d3a7240cFa48353978e56F"
       ]
     }
   }

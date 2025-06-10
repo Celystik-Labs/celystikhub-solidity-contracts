@@ -12,6 +12,7 @@ const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
 const POLYGONSCAN_API_KEY = process.env.POLYGONSCAN_API_KEY || "";
 const OPTIMISM_API_KEY = process.env.OPTIMISM_API_KEY || "";
 const ARBISCAN_API_KEY = process.env.ARBISCAN_API_KEY || "";
+const BSCSCAN_API_KEY = process.env.BSCSCAN_API_KEY || ""; // Add BscScan key if verifying
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
@@ -94,6 +95,16 @@ module.exports = {
       url: `https://arbitrum-mainnet.infura.io/v3/${INFURA_API_KEY}`,
       accounts: [PRIVATE_KEY],
       chainId: 42161
+    },
+    bnbTestnet: {
+      url: process.env.BNB_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545",
+      accounts: [process.env.PRIVATE_KEY],
+      chainId: 97,
+      verify: {
+        etherscan: {
+          apiKey: process.env.BSCSCAN_API_KEY
+        }
+      }
     }
   },
   etherscan: {
@@ -113,6 +124,9 @@ module.exports = {
       
       // Arbitrum
       arbitrumOne: ARBISCAN_API_KEY,
+
+      // BNB Testnet
+      bscTestnet: BSCSCAN_API_KEY
     },
     customChains: [
       {
